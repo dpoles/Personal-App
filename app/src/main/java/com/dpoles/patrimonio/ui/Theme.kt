@@ -148,7 +148,7 @@ fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = composed {
 }
 
 @Composable
-fun EmptyState(emoji: String, title: String, text: String, button: String, onClick: () -> Unit) {
+fun EmptyState(emoji: String, title: String, text: String, button: String, onClick: () -> Unit, secondary: Pair<String, () -> Unit>? = null) {
     Column(
         Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
@@ -167,5 +167,9 @@ fun EmptyState(emoji: String, title: String, text: String, button: String, onCli
             colors = ButtonDefaults.buttonColors(containerColor = Pal.Emerald, contentColor = Pal.Bg),
             contentPadding = PaddingValues(horizontal = 30.dp, vertical = 14.dp),
         ) { Text(button, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        if (secondary != null) {
+            Spacer(Modifier.height(10.dp))
+            TextButton(onClick = secondary.second) { Text(secondary.first, color = Pal.Muted, fontSize = 14.sp) }
+        }
     }
 }

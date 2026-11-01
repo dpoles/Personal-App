@@ -12,14 +12,47 @@ import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import android.net.Uri
 import java.io.File
 import kotlin.random.Random
+
+data class ImportPreview(val result: ExcelImport.Result, val replacing: Boolean)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val file = File(app.filesDir, "data.json")
     private val lock = Mutex()
     private val _db = MutableStateFlow(load())
     val db: StateFlow<Db> = _db
+
+    val importPreview = MutableStateFlow<ImportPreview?>(null)
+    val message = MutableStateFlow<String?>(null)
+
+    /** Legge il file Excel sul telefono e mostra un riepilogo; i dati cambiano solo dopo la conferma. */
+    fun prepareImport(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val res = withContext(Dispatchers.IO) {
+                    val grids = getApplication<Application>().contentResolver.openInputStream(uri)!!.use {
+                        XlsxReader.read(it, ExcelImport.SHEETS)
+                    }
+                    ExcelImport.build(grids)
+                }
+                val d = _db.value
+                importPreview.value = ImportPreview(res, d.months.isNotEmpty() || d.fills.isNotEmpty() || d.lots.isNotEmpty())
+            } catch (e: Exception) {
+                message.value = "Import non riuscito: " + (e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+    fun confirmImport() { importPreview.value?.let { p -> mutate { p.result.db } }; importPreview.value = null }
+    fun cancelImport() { importPreview.value = null }
+    fun dismissMessage() { message.value = null }
+
+    fun saveVehicle(v: VehicleE) = mutate { d -> d.copy(vehicles = d.vehicles.upsert(v) { it.id }) }
+    fun deleteVehicle(id: Long) = mutate { d ->
+        d.copy(vehicles = d.vehicles.filter { it.id != id }, fills = d.fills.filter { it.vehicleId != id })
+    }
 
     private fun load(): Db = runCatching { Db.fromJson(file.readText()) }.getOrDefault(Db())
 

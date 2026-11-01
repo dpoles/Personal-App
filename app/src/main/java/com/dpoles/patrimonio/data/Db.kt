@@ -14,7 +14,11 @@ data class MonthE(
     val cash: Double, val deposit: Double, val azioni: Double, val monetari: Double,
 )
 
-data class VehicleE(val id: Long, val name: String)
+data class VehicleE(
+    val id: Long, val name: String,
+    val periodStart: LocalDate? = null, val periodEnd: LocalDate? = null,
+    val startKm: Double? = null, val kmLimit: Double? = null,
+)
 
 data class FillE(
     val id: Long, val vehicleId: Long, val date: LocalDate,
@@ -71,15 +75,29 @@ data class Db(
     fun vehicleList(): List<Vehicle> = vehicles.map { v ->
         val f = fills.filter { it.vehicleId == v.id }.sortedBy { it.date }
         var prev: LocalDate? = null
-        Vehicle(
-            v.name,
-            f.map {
-                val days = prev?.let { p -> ChronoUnit.DAYS.between(p, it.date).toInt() }
-                prev = it.date
-                Fill(it.date, it.amount, it.full, it.liters?.takeIf { l -> l > 0 }?.let { l -> it.amount / l }, it.km, days, it.liters, it.id)
-            },
-            null, v.id,
-        )
+        val list = f.map {
+            val days = if (it.amount > 0) prev?.let { p -> ChronoUnit.DAYS.between(p, it.date).toInt() } else null
+            if (it.amount > 0) prev = it.date
+            Fill(it.date, it.amount, it.full, it.liters?.takeIf { l -> l > 0 }?.let { l -> it.amount / l }, it.km, days, it.liters, it.id)
+        }
+        Vehicle(v.name, list, v.id, forecast(v, f), v.startKm != null)
+    }
+
+    private fun forecast(v: VehicleE, f: List<FillE>): Forecast? {
+        val readings = f.filter { it.km != null }
+        val first = readings.firstOrNull() ?: return null
+        val last = readings.maxByOrNull { it.km!! }!!
+        val startKm = v.startKm ?: first.km!!
+        val startDate = v.periodStart ?: first.date
+        val endDate = v.periodEnd ?: startDate.plusYears(1).minusDays(1)
+        val elapsed = ChronoUnit.DAYS.between(startDate, last.date)
+        val total = ChronoUnit.DAYS.between(startDate, endDate)
+        val lastKm = last.km!!
+        val perDay = if (elapsed > 0 && lastKm > startKm) (lastKm - startKm) / elapsed else null
+        val projected = perDay?.let { startKm + it * total }
+        val left = ChronoUnit.DAYS.between(LocalDate.now(), endDate).toInt().coerceAtLeast(0)
+        val allowed = v.kmLimit?.let { (it - lastKm) / ChronoUnit.DAYS.between(last.date, endDate).coerceAtLeast(1) }
+        return Forecast(startDate, endDate, startKm, lastKm, last.date, perDay, projected, left, v.kmLimit, allowed)
     }
 
     // ───────── Salvataggio ─────────
@@ -90,7 +108,11 @@ data class Db(
             JSONObject().put("id", it.id).put("y", it.year).put("m", it.month).put("in", it.income).put("out", it.expense)
                 .put("cash", it.cash).put("dep", it.deposit).put("az", it.azioni).put("mon", it.monetari)
         }))
-        .put("vehicles", JSONArray(vehicles.map { JSONObject().put("id", it.id).put("name", it.name) }))
+        .put("vehicles", JSONArray(vehicles.map {
+            JSONObject().put("id", it.id).put("name", it.name)
+                .put("ps", it.periodStart?.toEpochDay() ?: JSONObject.NULL).put("pe", it.periodEnd?.toEpochDay() ?: JSONObject.NULL)
+                .put("sk", it.startKm ?: JSONObject.NULL).put("lim", it.kmLimit ?: JSONObject.NULL)
+        }))
         .put("fills", JSONArray(fills.map {
             JSONObject().put("id", it.id).put("veh", it.vehicleId).put("d", it.date.toEpochDay()).put("amt", it.amount)
                 .put("l", it.liters ?: JSONObject.NULL).put("km", it.km ?: JSONObject.NULL).put("full", it.full)
@@ -114,7 +136,14 @@ data class Db(
                     MonthE(it.getLong("id"), it.getInt("y"), it.getInt("m"), it.getDouble("in"), it.getDouble("out"),
                         it.getDouble("cash"), it.getDouble("dep"), it.getDouble("az"), it.getDouble("mon"))
                 },
-                vehicles = o.getJSONArray("vehicles").map { VehicleE(it.getLong("id"), it.getString("name")) },
+                vehicles = o.getJSONArray("vehicles").map {
+                    VehicleE(
+                        it.getLong("id"), it.getString("name"),
+                        if (it.isNull("ps")) null else LocalDate.ofEpochDay(it.getLong("ps")),
+                        if (it.isNull("pe")) null else LocalDate.ofEpochDay(it.getLong("pe")),
+                        it.dbl("sk"), it.dbl("lim"),
+                    )
+                },
                 fills = o.getJSONArray("fills").map {
                     FillE(it.getLong("id"), it.getLong("veh"), LocalDate.ofEpochDay(it.getLong("d")), it.getDouble("amt"),
                         it.dbl("l"), it.dbl("km"), it.getBoolean("full"))

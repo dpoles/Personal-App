@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dpoles.patrimonio.MainViewModel
 import com.dpoles.patrimonio.data.*
 
@@ -23,11 +24,13 @@ private val TABS = listOf(
 )
 
 @Composable
-fun PatrimonioApp(db: Db, vm: MainViewModel) {
+fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var hide by rememberSaveable { mutableStateOf(false) }
     var vehIdx by rememberSaveable { mutableIntStateOf(0) }
     var sheet by remember { mutableStateOf<Sheet?>(null) }
+    val preview by vm.importPreview.collectAsStateWithLifecycle()
+    val message by vm.message.collectAsStateWithLifecycle()
 
     val bal = remember(db) { db.balRows() }
     val azioni = remember(db) { db.portfolio(AZIONI) }
@@ -50,6 +53,7 @@ fun PatrimonioApp(db: Db, vm: MainViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(TABS[tab].title, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                        Text("📥", fontSize = 22.sp, modifier = Modifier.clickableNoRipple(onImport).padding(8.dp))
                         Text(if (hide) "🙈" else "👁", fontSize = 22.sp, modifier = Modifier.clickableNoRipple { hide = !hide }.padding(8.dp))
                     }
                 },
@@ -78,14 +82,36 @@ fun PatrimonioApp(db: Db, vm: MainViewModel) {
             ) { pad ->
                 Box(Modifier.padding(pad)) {
                     when (tab) {
-                        0 -> HomeScreen(bal, onAdd = ::add, onEdit = { sheet = Sheet.EditMonth(it) })
+                        0 -> HomeScreen(bal, onAdd = ::add, onEdit = { sheet = Sheet.EditMonth(it) }, onImport = onImport)
                         1 -> PortfolioScreen(azioni, Pal.Violet, "azioni", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(AZIONI, it) })
                         2 -> PortfolioScreen(monetari, Pal.Cyan, "monetari", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(MONETARI, it) })
-                        else -> FuelScreen(vehicles, vehIdx, { vehIdx = it }, { sheet = Sheet.NewFill(it ?: currentVehicle).takeIf { _ -> it != null } ?: Sheet.NewFill(null) }, { sheet = Sheet.EditFill(it) })
+                        else -> FuelScreen(vehicles, vehIdx, { vehIdx = it }, { sheet = Sheet.NewFill(it ?: currentVehicle).takeIf { _ -> it != null } ?: Sheet.NewFill(null) }, { sheet = Sheet.EditFill(it) }, { sheet = Sheet.EditVehicle(it) })
                     }
                 }
             }
             sheet?.let { s -> SheetHost(s, db, vm) { sheet = null } }
+            preview?.let { p ->
+                AlertDialog(
+                    onDismissRequest = vm::cancelImport,
+                    title = { Text("Importare dal file Excel?") },
+                    text = {
+                        Text(
+                            "${p.result.months} mesi, ${p.result.vehicles} veicoli (${p.result.fills} rifornimenti), ${p.result.lots} acquisti." +
+                                if (p.replacing) "\n\nI dati attuali dell'app verranno sostituiti." else ""
+                        )
+                    },
+                    confirmButton = { TextButton(vm::confirmImport) { Text("Importa", color = Pal.Emerald) } },
+                    dismissButton = { TextButton(vm::cancelImport) { Text("Annulla", color = Pal.Muted) } },
+                    containerColor = Pal.Surface, titleContentColor = Pal.Text, textContentColor = Pal.Muted,
+                )
+            }
+            message?.let { m ->
+                AlertDialog(
+                    onDismissRequest = vm::dismissMessage, title = { Text("Attenzione") }, text = { Text(m) },
+                    confirmButton = { TextButton(vm::dismissMessage) { Text("OK", color = Pal.Emerald) } },
+                    containerColor = Pal.Surface, titleContentColor = Pal.Text, textContentColor = Pal.Muted,
+                )
+            }
         }
     }
 }
@@ -106,6 +132,10 @@ private fun SheetHost(s: Sheet, db: Db, vm: MainViewModel, close: () -> Unit) {
             { vm.setPrice(s.kind, s.name, it); close() }, close,
         )
         is Sheet.NewFill -> FillForm(db, s.vehicleId, null, { f, n -> vm.saveFill(f, n); close() }, null, close)
+        is Sheet.EditVehicle -> db.vehicles.firstOrNull { it.id == s.id }?.let { v ->
+            val first = db.fills.filter { it.vehicleId == v.id && it.km != null }.minByOrNull { it.date }
+            VehicleForm(v, first?.km, first?.date, { vm.saveVehicle(it); close() }, { vm.deleteVehicle(v.id); close() }, close)
+        }
         is Sheet.EditFill -> db.fills.firstOrNull { it.id == s.id }?.let { f ->
             FillForm(db, f.vehicleId, f, { x, n -> vm.saveFill(x, n); close() }, { vm.deleteFill(f.id); close() }, close)
         }

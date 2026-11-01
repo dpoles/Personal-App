@@ -28,6 +28,7 @@ sealed interface Sheet {
     data class EditLot(val id: Long) : Sheet
     data class NewFill(val vehicleId: Long?) : Sheet
     data class EditFill(val id: Long) : Sheet
+    data class EditVehicle(val id: Long) : Sheet
     data class EditPrice(val kind: String, val name: String) : Sheet
 }
 
@@ -227,13 +228,15 @@ fun FillForm(db: Db, vehicleId: Long?, existing: FillE?, onSave: (FillE, String?
     val amt = a ?: if (p != null && l != null) p * l else null
     val lit = l ?: if (a != null && p != null && p > 0) a / p else null
     val kmv = if (km.isBlank()) null else km.d()
-    val ok = amt != null && amt > 0 && (!creating || newName.isNotBlank()) && (km.isBlank() || kmv != null) &&
-        (liters.isBlank() || l != null) && (price.isBlank() || p != null)
+    val kmOnly = amount.isBlank() && liters.isBlank() && price.isBlank()
+    val ok = (!creating || newName.isNotBlank()) && (km.isBlank() || kmv != null) &&
+        (liters.isBlank() || l != null) && (price.isBlank() || p != null) &&
+        (if (kmOnly) kmv != null else (amt != null && amt > 0))
 
     FormSheet(
         if (existing == null) "Nuovo rifornimento" else "Modifica rifornimento", onDismiss,
         onSave = if (!ok) null else ({
-            onSave(FillE(existing?.id ?: 0L, veh ?: 0L, date, amt!!, lit, kmv, full), if (creating) newName else null)
+            onSave(FillE(existing?.id ?: 0L, veh ?: 0L, date, if (kmOnly) 0.0 else amt!!, if (kmOnly) null else lit, kmv, full), if (creating) newName else null)
         }),
         onDelete = onDelete,
     ) {
@@ -262,6 +265,48 @@ fun FillForm(db: Db, vehicleId: Long?, existing: FillE?, onSave: (FillE, String?
             Switch(full, { full = it }, colors = SwitchDefaults.colors(checkedTrackColor = Pal.Emerald, checkedThumbColor = Pal.Bg))
         }
         if (amt != null && lit != null && lit > 0) Hint("Prezzo: " + eur(amt / lit, 3) + "/L")
-        Hint("Il primo rifornimento fa da base per i chilometri: calcolo consumi dal secondo in poi.")
+        Hint(if (kmOnly) "Solo lettura dei km: aggiorna la previsione di fine periodo senza registrare un rifornimento."
+             else "Lascia vuoti importo e litri per registrare solo i chilometri. Il primo rifornimento fa da base per i consumi.")
     }
+}
+
+// ───────────────────────── Veicolo: periodo e limite km ─────────────────────────
+
+@Composable
+fun VehicleForm(v: VehicleE, firstKm: Double?, firstDate: LocalDate?, onSave: (VehicleE) -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(v.name) }
+    val defStart = v.periodStart ?: firstDate ?: LocalDate.now()
+    var start by remember { mutableStateOf(defStart) }
+    var end by remember { mutableStateOf(v.periodEnd ?: defStart.plusYears(1).minusDays(1)) }
+    var startKm by remember { mutableStateOf(fmtIn(v.startKm ?: firstKm)) }
+    var limit by remember { mutableStateOf(fmtIn(v.kmLimit)) }
+    var confirm by remember { mutableStateOf(false) }
+    val sk = if (startKm.isBlank()) null else startKm.d()
+    val lim = if (limit.isBlank()) null else limit.d()
+    val ok = name.isNotBlank() && (startKm.isBlank() || sk != null) && (limit.isBlank() || lim != null) && !end.isBefore(start)
+
+    FormSheet(
+        "Veicolo e periodo", onDismiss,
+        onSave = if (!ok) null else ({ onSave(v.copy(name = name.trim(), periodStart = start, periodEnd = end, startKm = sk, kmLimit = lim)) }),
+        onDelete = { confirm = true },
+    ) {
+        Field("Nome", name, { name = it }, decimal = false)
+        Label("Periodo di riferimento")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            DateField("Inizio", start, { start = it }, Modifier.weight(1f))
+            DateField("Fine", end, { end = it }, Modifier.weight(1f))
+        }
+        if (end.isBefore(start)) Hint("La fine deve essere dopo l'inizio.", Pal.Rose)
+        Field("Km a inizio periodo", startKm, { startKm = it }, suffix = "km")
+        Field("Limite km a chiusura (facoltativo)", limit, { limit = it }, suffix = "km")
+        Hint("La previsione stima i km a fine periodo in base al ritmo attuale. Il limite è il contachilometri massimo che vuoi avere alla chiusura.")
+    }
+    if (confirm) AlertDialog(
+        onDismissRequest = { confirm = false },
+        title = { Text("Eliminare ${v.name}?") },
+        text = { Text("Verranno eliminati anche tutti i suoi rifornimenti.") },
+        confirmButton = { TextButton({ confirm = false; onDelete() }) { Text("Elimina", color = Pal.Rose) } },
+        dismissButton = { TextButton({ confirm = false }) { Text("Annulla", color = Pal.Muted) } },
+        containerColor = Pal.Surface, titleContentColor = Pal.Text, textContentColor = Pal.Muted,
+    )
 }

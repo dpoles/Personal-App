@@ -39,9 +39,9 @@ private fun Dot(color: Color) = Box(Modifier.size(10.dp).background(color, Circl
 // ═════════════════════════ PATRIMONIO ═════════════════════════
 
 @Composable
-fun HomeScreen(bal: List<BalRow>, onAdd: () -> Unit, onEdit: (Long) -> Unit) {
+fun HomeScreen(bal: List<BalRow>, onAdd: () -> Unit, onEdit: (Long) -> Unit, onImport: () -> Unit) {
     if (bal.isEmpty()) {
-        EmptyState("💰", "Il tuo patrimonio", "Registra il primo mese: entrate, uscite e quanto hai su conti, depositi e investimenti.", "Aggiungi il primo mese", onAdd)
+        EmptyState("💰", "Il tuo patrimonio", "Registra il primo mese: entrate, uscite e quanto hai su conti, depositi e investimenti.", "Aggiungi il primo mese", onAdd, "oppure importa da Excel" to onImport)
         return
     }
     if (bal.size < 2) {
@@ -276,10 +276,10 @@ private fun LotCard(l: Lot, onClick: (Long) -> Unit) {
 @Composable
 fun FuelScreen(
     vehicles: List<Vehicle>, idx: Int, onIdx: (Int) -> Unit,
-    onAdd: (Long?) -> Unit, onEditFill: (Long) -> Unit,
+    onAdd: (Long?) -> Unit, onEditFill: (Long) -> Unit, onEditVehicle: (Long) -> Unit,
 ) {
     if (vehicles.isEmpty()) {
-        EmptyState("⛽", "Nessun veicolo", "Registra i rifornimenti: calcolo spesa, prezzo medio e consumi.", "Aggiungi rifornimento") { onAdd(null) }
+        EmptyState("⛽", "Nessun veicolo", "Registra i rifornimenti: calcolo spesa, prezzo medio e consumi.", "Aggiungi rifornimento", onClick = { onAdd(null) })
         return
     }
     val v = vehicles[idx.coerceIn(0, vehicles.lastIndex)]
@@ -300,6 +300,9 @@ fun FuelScreen(
             Box(
                 Modifier.background(Pal.Surface2, RoundedCornerShape(50)).clickableNoRipple { onAdd(null) }.padding(horizontal = 16.dp, vertical = 8.dp),
             ) { Text("＋", color = Pal.Muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+            Box(
+                Modifier.background(Pal.Surface2, RoundedCornerShape(50)).clickableNoRipple { onEditVehicle(v.id) }.padding(horizontal = 16.dp, vertical = 8.dp),
+            ) { Text("⚙ Periodo e limite", color = Pal.Muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
         }
         GlassCard {
             Label("Speso in carburante")
@@ -321,6 +324,8 @@ fun FuelScreen(
                 Text("Consumi e costo al km compaiono dal secondo rifornimento, indicando i chilometri.", color = Pal.Muted, fontSize = 12.sp)
             }
         }
+
+        ForecastCard(v) { onEditVehicle(v.id) }
 
         if (priced.size >= 2) {
             var sel by remember(v.id) { mutableStateOf<Int?>(null) }
@@ -346,22 +351,71 @@ fun FuelScreen(
         }
 
         Label("Storico", Modifier.padding(start = 4.dp))
-        paid.reversed().forEach { f ->
+        v.fills.reversed().forEach { f ->
             GlassCard(onClick = { onEditFill(f.id) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(dayMonth(f.date), fontWeight = FontWeight.Bold)
                         Text(
-                            listOfNotNull(f.liters?.let { num(it, 1) + " L" }, f.price?.let { eur(it, 3) + "/L" }, if (f.full) "pieno" else null).joinToString(" · "),
+                            if (f.amount > 0) listOfNotNull(f.liters?.let { num(it, 1) + " L" }, f.price?.let { eur(it, 3) + "/L" }, if (f.full) "pieno" else null).joinToString(" · ")
+                            else "Solo lettura km",
                             color = Pal.Muted, fontSize = 12.sp,
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(eur(f.amount, 2), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        f.km?.let { Text(num(it, 0) + " km", color = Pal.Muted, fontSize = 12.sp) }
+                        if (f.amount > 0) Text(eur(f.amount, 2), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        f.km?.let { Text(num(it, 0) + " km", color = if (f.amount > 0) Pal.Muted else Pal.Text, fontSize = if (f.amount > 0) 12.sp else 16.sp, fontWeight = if (f.amount > 0) FontWeight.Normal else FontWeight.Bold) }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ForecastCard(v: Vehicle, onSettings: () -> Unit) {
+    val f = v.forecast ?: return
+    GlassCard(onClick = onSettings) {
+        Label("Km a chiusura · " + dayMonth(f.endDate))
+        Spacer(Modifier.height(6.dp))
+        if (f.projectedKm == null) {
+            Text("–", style = BigNumber)
+            Text("Servono almeno due letture dei km in date diverse.", color = Pal.Muted, fontSize = 13.sp)
+        } else {
+            Text(num(f.projectedKm, 0) + " km", style = BigNumber, maxLines = 1)
+            Text(
+                "Mancano ${f.daysLeft} giorni · ritmo ${num(f.kmPerDay ?: 0.0, 1)} km/giorno · previsti ${num(f.projectedDriven ?: 0.0, 0)} km nel periodo",
+                color = Pal.Muted, fontSize = 13.sp,
+            )
+        }
+        val lim = f.limit
+        if (lim != null && f.projectedKm != null) {
+            val over = f.overLimit ?: 0.0
+            val c = if (over <= 0) Pal.Emerald else Pal.Rose
+            Spacer(Modifier.height(14.dp))
+            val span = (lim - f.startKm).coerceAtLeast(1.0)
+            val done = (f.driven / span).coerceIn(0.0, 1.0).toFloat()
+            Box(Modifier.fillMaxWidth().height(10.dp).background(Pal.Surface2, RoundedCornerShape(50))) {
+                Box(Modifier.fillMaxWidth(done).fillMaxHeight().background(c, RoundedCornerShape(50)))
+            }
+            Spacer(Modifier.height(10.dp))
+            DeltaChip(
+                if (over <= 0) "Entro il limite di ${num(lim, 0)} km · restano ${num(-over, 0)} km"
+                else "Oltre il limite di ${num(lim, 0)} km di ${num(over, 0)} km",
+                over <= 0,
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth()) {
+                Stat("Ritmo attuale", num(f.kmPerDay ?: 0.0, 1) + " km/g", Modifier.weight(1f))
+                Stat(
+                    "Ritmo consentito",
+                    f.allowedPerDay?.let { if (it >= 0) num(it, 1) + " km/g" else "superato" } ?: "–",
+                    Modifier.weight(1f), c,
+                )
+            }
+        } else if (lim == null) {
+            Spacer(Modifier.height(10.dp))
+            Text("Tocca per impostare un limite di km e confrontarlo con la previsione.", color = Pal.Muted, fontSize = 12.sp)
         }
     }
 }

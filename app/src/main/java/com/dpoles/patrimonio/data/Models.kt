@@ -31,37 +31,62 @@ data class Fill(
     val id: Long = 0,
 )
 
-data class Vehicle(val name: String, val fills: List<Fill>, val lastKm: Double?, val id: Long = 0) {
-    private val paid get() = fills.drop(1).filter { it.amount > 0 }
-    val spent get() = fills.sumOf { it.amount }
-    val liters get() = fills.sumOf { it.liters ?: 0.0 }
+/** Previsione dei km a chiusura del periodo (ogni veicolo ha il suo periodo e il suo limite). */
+data class Forecast(
+    val startDate: LocalDate, val endDate: LocalDate, val startKm: Double,
+    val lastKm: Double, val lastDate: LocalDate,
+    val kmPerDay: Double?,          // ritmo attuale
+    val projectedKm: Double?,       // contachilometri previsto a fine periodo
+    val daysLeft: Int,
+    val limit: Double?,             // km massimi a chiusura (facoltativo)
+    val allowedPerDay: Double?,     // km/giorno consentiti per restare nel limite
+) {
+    val driven get() = lastKm - startKm
+    val projectedDriven get() = projectedKm?.minus(startKm)
+    val overLimit get() = if (projectedKm != null && limit != null) projectedKm - limit else null
+}
+
+data class Vehicle(
+    val name: String,
+    val fills: List<Fill>,          // tutte le voci, comprese le sole letture dei km (importo 0)
+    val id: Long = 0,
+    val forecast: Forecast? = null,
+    val startKmSet: Boolean = false,
+) {
+    private val real get() = fills.filter { it.amount > 0 }
+    val lastKm: Double? get() = fills.mapNotNull { it.km }.maxOrNull()
+    val spent get() = real.sumOf { it.amount }
+    val liters get() = real.sumOf { it.liters ?: 0.0 }
     val avgPrice: Double?
         get() {
-            val l = fills.filter { (it.liters ?: 0.0) > 0 }
+            val l = real.filter { (it.liters ?: 0.0) > 0 }
             val sum = l.sumOf { it.liters!! }
             return if (sum > 0) l.sumOf { it.amount } / sum else null
         }
+    // Con i km di inizio periodo noti, tutti i pieni contano; altrimenti il primo rifornimento fa da base.
+    private val counted get() = if (startKmSet) real else real.drop(1)
+    private val baseKm get() = if (startKmSet) forecast?.startKm else real.firstOrNull()?.km
     private val kmToLastFill: Double?
         get() {
-            val a = fills.firstOrNull()?.km
-            val b = fills.lastOrNull { it.amount > 0 }?.km
+            val a = baseKm
+            val b = real.lastOrNull { it.km != null }?.km
             return if (a != null && b != null && b > a) b - a else null
         }
     val kmPerLiter: Double?
         get() {
             val km = kmToLastFill ?: return null
-            val l = paid.sumOf { it.liters ?: 0.0 }
+            val l = counted.sumOf { it.liters ?: 0.0 }
             return if (l > 0) km / l else null
         }
     val costPerKm: Double?
         get() {
             val km = kmToLastFill ?: return null
-            return paid.sumOf { it.amount } / km
+            return counted.sumOf { it.amount } / km
         }
     val kmDriven: Double?
         get() {
-            val a = fills.firstOrNull()?.km ?: return null
-            val b = lastKm ?: fills.lastOrNull()?.km ?: return null
+            val a = baseKm ?: fills.firstOrNull { it.km != null }?.km ?: return null
+            val b = lastKm ?: return null
             return (b - a).takeIf { it > 0 }
         }
 }
