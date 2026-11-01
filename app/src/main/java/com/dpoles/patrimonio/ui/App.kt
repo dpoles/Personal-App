@@ -2,144 +2,112 @@ package com.dpoles.patrimonio.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dpoles.patrimonio.Ui
-import java.text.DateFormat
-import java.util.Date
+import com.dpoles.patrimonio.MainViewModel
+import com.dpoles.patrimonio.data.*
 
-private data class Tab(val title: String, val icon: String)
+private data class Tab(val title: String, val icon: String, val fab: String)
 
-private val TABS = listOf(Tab("Patrimonio", "💰"), Tab("Azioni", "📈"), Tab("Monetari", "🏦"), Tab("Auto", "⛽"))
+private val TABS = listOf(
+    Tab("Patrimonio", "💰", "Nuovo mese"), Tab("Azioni", "📈", "Acquisto"),
+    Tab("Monetari", "🏦", "Acquisto"), Tab("Auto", "⛽", "Rifornimento"),
+)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PatrimonioApp(ui: Ui, onRefresh: () -> Unit, onLogin: () -> Unit, onImport: () -> Unit) {
+fun PatrimonioApp(db: Db, vm: MainViewModel) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var hide by rememberSaveable { mutableStateOf(false) }
-    val data = ui.data
+    var vehIdx by rememberSaveable { mutableIntStateOf(0) }
+    var sheet by remember { mutableStateOf<Sheet?>(null) }
+
+    val bal = remember(db) { db.balRows() }
+    val azioni = remember(db) { db.portfolio(AZIONI) }
+    val monetari = remember(db) { db.portfolio(MONETARI) }
+    val vehicles = remember(db) { db.vehicleList() }
+    val currentVehicle = vehicles.getOrNull(vehIdx.coerceIn(0, (vehicles.size - 1).coerceAtLeast(0)))?.id
+
+    fun add() { sheet = when (tab) { 0 -> Sheet.NewMonth; 1 -> Sheet.NewLot(AZIONI); 2 -> Sheet.NewLot(MONETARI); else -> Sheet.NewFill(currentVehicle) } }
+    val empty = when (tab) { 0 -> bal.isEmpty(); 1 -> azioni.lots.isEmpty(); 2 -> monetari.lots.isEmpty(); else -> vehicles.isEmpty() }
 
     CompositionLocalProvider(LocalHide provides hide, LocalContentColor provides Pal.Text) {
         Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(listOf(Pal.Surface2.copy(alpha = 0.6f), Pal.Bg), endY = 900f)
-            )
+            Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Pal.Surface2.copy(alpha = 0.6f), Pal.Bg), endY = 900f))
         ) {
-            if (data == null) {
-                LoginScreen(ui, onLogin, onRefresh, onImport)
-            } else {
-                Scaffold(
-                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    topBar = {
-                        Row(
-                            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(TABS[tab].title, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-                                val sub = if (ui.error != null) "⚠ ${ui.error}"
-                                else if (ui.needsLogin) "Offline · tocca per accedere"
-                                else (if (ui.mode == "file") "Da file · " else "Aggiornato ") + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(data.updatedAt))
-                                Text(
-                                    sub, fontSize = 12.sp,
-                                    color = if (ui.error != null) Pal.Rose else Pal.Muted,
-                                    modifier = if (ui.needsLogin) Modifier.clickableNoRipple(onLogin) else Modifier,
-                                )
-                            }
-                            Text("📥", fontSize = 22.sp, modifier = Modifier.clickableNoRipple(onImport).padding(8.dp))
-                            Text(if (hide) "🙈" else "👁", fontSize = 22.sp, modifier = Modifier.clickableNoRipple { hide = !hide }.padding(8.dp))
+            Scaffold(
+                containerColor = Color.Transparent,
+                topBar = {
+                    Row(
+                        Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(TABS[tab].title, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                        Text(if (hide) "🙈" else "👁", fontSize = 22.sp, modifier = Modifier.clickableNoRipple { hide = !hide }.padding(8.dp))
+                    }
+                },
+                floatingActionButton = {
+                    if (!empty) ExtendedFloatingActionButton(
+                        onClick = ::add, containerColor = Pal.Emerald, contentColor = Pal.Bg,
+                        text = { Text(TABS[tab].fab, fontWeight = FontWeight.Bold) },
+                        icon = { Text("＋", fontSize = 20.sp, fontWeight = FontWeight.Bold) },
+                    )
+                },
+                bottomBar = {
+                    NavigationBar(containerColor = Pal.Surface.copy(alpha = 0.96f)) {
+                        TABS.forEachIndexed { i, t ->
+                            NavigationBarItem(
+                                selected = tab == i, onClick = { tab = i },
+                                icon = { Text(t.icon, fontSize = 20.sp) },
+                                label = { Text(t.title, fontSize = 11.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedTextColor = Pal.Emerald, unselectedTextColor = Pal.Muted,
+                                    indicatorColor = Pal.Emerald.copy(alpha = 0.16f),
+                                ),
+                            )
                         }
-                    },
-                    bottomBar = {
-                        NavigationBar(containerColor = Pal.Surface.copy(alpha = 0.96f)) {
-                            TABS.forEachIndexed { i, t ->
-                                NavigationBarItem(
-                                    selected = tab == i, onClick = { tab = i },
-                                    icon = { Text(t.icon, fontSize = 20.sp) },
-                                    label = { Text(t.title, fontSize = 11.sp) },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedTextColor = Pal.Emerald, unselectedTextColor = Pal.Muted,
-                                        indicatorColor = Pal.Emerald.copy(alpha = 0.16f),
-                                    ),
-                                )
-                            }
-                        }
-                    },
-                ) { pad ->
-                    PullToRefreshBox(isRefreshing = ui.loading, onRefresh = onRefresh, modifier = Modifier.padding(pad)) {
-                        Section(
-                            err = data.errors.firstOrNull { it.startsWith(listOf("Bal", "Azioni", "Monetari", "Rif")[tab]) },
-                        ) {
-                            when (tab) {
-                                0 -> data.bal?.let { HomeScreen(it) }
-                                1 -> data.azioni?.let { PortfolioScreen(it, Pal.Violet, "azioni") }
-                                2 -> data.monetari?.let { PortfolioScreen(it, Pal.Cyan, "monetari") }
-                                else -> data.vehicles?.let { FuelScreen(it) }
-                            }
-                        }
+                    }
+                },
+            ) { pad ->
+                Box(Modifier.padding(pad)) {
+                    when (tab) {
+                        0 -> HomeScreen(bal, onAdd = ::add, onEdit = { sheet = Sheet.EditMonth(it) })
+                        1 -> PortfolioScreen(azioni, Pal.Violet, "azioni", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(AZIONI, it) })
+                        2 -> PortfolioScreen(monetari, Pal.Cyan, "monetari", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(MONETARI, it) })
+                        else -> FuelScreen(vehicles, vehIdx, { vehIdx = it }, { sheet = Sheet.NewFill(it ?: currentVehicle).takeIf { _ -> it != null } ?: Sheet.NewFill(null) }, { sheet = Sheet.EditFill(it) })
                     }
                 }
             }
+            sheet?.let { s -> SheetHost(s, db, vm) { sheet = null } }
         }
     }
 }
 
 @Composable
-private fun Section(err: String?, content: @Composable () -> Unit) {
-    if (err != null) {
-        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Non riesco a leggere questo foglio", fontWeight = FontWeight.Bold)
-                Text(err, color = Pal.Muted, fontSize = 13.sp, textAlign = TextAlign.Center)
-            }
+private fun SheetHost(s: Sheet, db: Db, vm: MainViewModel, close: () -> Unit) {
+    when (s) {
+        Sheet.NewMonth -> MonthForm(db, null, { vm.saveMonth(it); close() }, null, close)
+        is Sheet.EditMonth -> db.months.firstOrNull { it.id == s.id }?.let { m ->
+            MonthForm(db, m, { vm.saveMonth(it); close() }, { vm.deleteMonth(m.id); close() }, close)
         }
-    } else content()
-}
-
-@Composable
-private fun LoginScreen(ui: Ui, onLogin: () -> Unit, onRetry: () -> Unit, onImport: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(32.dp).systemBarsPadding(),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            Modifier.size(96.dp).background(Brush.linearGradient(listOf(Pal.Emerald, Pal.Cyan)), RoundedCornerShape(28.dp)),
-            contentAlignment = Alignment.Center,
-        ) { Text("📈", fontSize = 44.sp) }
-        Spacer(Modifier.height(28.dp))
-        Text("Patrimonio", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Scarica il foglio da Google Sheets come Excel (.xlsx) e aprilo qui.\nI dati restano solo su questo telefono.",
-            color = Pal.Muted, textAlign = TextAlign.Center, fontSize = 15.sp,
+        is Sheet.NewLot -> LotForm(db, s.kind, null, { vm.saveLot(it); close() }, null, close)
+        is Sheet.EditLot -> db.lots.firstOrNull { it.id == s.id }?.let { l ->
+            LotForm(db, l.kind, l, { vm.saveLot(it); close() }, { vm.deleteLot(l.id); close() }, close)
+        }
+        is Sheet.EditPrice -> PriceForm(
+            db.portfolio(s.kind).instruments.firstOrNull { it.name == s.name }?.price ?: 0.0, s.name,
+            { vm.setPrice(s.kind, s.name, it); close() }, close,
         )
-        Spacer(Modifier.height(32.dp))
-        if (ui.loading) CircularProgressIndicator(color = Pal.Emerald)
-        else {
-            Button(
-                onClick = onImport,
-                colors = ButtonDefaults.buttonColors(containerColor = Pal.Emerald, contentColor = Pal.Bg),
-                shape = RoundedCornerShape(50), contentPadding = PaddingValues(horizontal = 32.dp, vertical = 14.dp),
-            ) { Text("Importa file Excel", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-            Spacer(Modifier.height(14.dp))
-            Text(
-                "Avanzato: accedi con Google", color = Pal.Muted, fontSize = 13.sp,
-                modifier = Modifier.clickableNoRipple { if (ui.needsLogin) onLogin() else onRetry() }.padding(10.dp),
-            )
-        }
-        ui.error?.let {
-            Spacer(Modifier.height(20.dp))
-            Text(it, color = Pal.Rose, fontSize = 13.sp, textAlign = TextAlign.Center)
+        is Sheet.NewFill -> FillForm(db, s.vehicleId, null, { f, n -> vm.saveFill(f, n); close() }, null, close)
+        is Sheet.EditFill -> db.fills.firstOrNull { it.id == s.id }?.let { f ->
+            FillForm(db, f.vehicleId, f, { x, n -> vm.saveFill(x, n); close() }, { vm.deleteFill(f.id); close() }, close)
         }
     }
 }

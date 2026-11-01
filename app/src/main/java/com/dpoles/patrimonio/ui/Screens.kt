@@ -39,8 +39,26 @@ private fun Dot(color: Color) = Box(Modifier.size(10.dp).background(color, Circl
 // ═════════════════════════ PATRIMONIO ═════════════════════════
 
 @Composable
-fun HomeScreen(bal: List<BalRow>) {
-    if (bal.size < 2) { Empty("Nessun dato nel foglio Bal"); return }
+fun HomeScreen(bal: List<BalRow>, onAdd: () -> Unit, onEdit: (Long) -> Unit) {
+    if (bal.isEmpty()) {
+        EmptyState("💰", "Il tuo patrimonio", "Registra il primo mese: entrate, uscite e quanto hai su conti, depositi e investimenti.", "Aggiungi il primo mese", onAdd)
+        return
+    }
+    if (bal.size < 2) {
+        val m = bal[0]
+        Page {
+            Spacer(Modifier.height(4.dp))
+            GlassCard {
+                Label("Patrimonio · ${monthLong(m.date)}")
+                Spacer(Modifier.height(6.dp))
+                CountUp(m.total, BigNumber)
+                Spacer(Modifier.height(8.dp))
+                Text("Aggiungi un altro mese per vedere grafico, andamento e risparmio.", color = Pal.Muted, fontSize = 14.sp)
+            }
+            MonthList(bal, onEdit)
+        }
+        return
+    }
     val curIdx = bal.indexOfLast { it.type == 'C' }.takeIf { it >= 0 } ?: bal.indexOfLast { !it.isProjection }
     val cur = bal[curIdx]
     val prev = bal.getOrNull(curIdx - 1)
@@ -84,7 +102,7 @@ fun HomeScreen(bal: List<BalRow>) {
         val liquid = max(0.0, cur.total - others)
         val slices = listOf(
             Slice("Azioni (ETF)", cur.azioni, Pal.Violet), Slice("Monetari", cur.monetari, Pal.Cyan),
-            Slice("Deposito Santander", cur.santander, Pal.Amber), Slice("Liquidità e c/c", liquid, Pal.Blue),
+            Slice("Conto deposito", cur.santander, Pal.Amber), Slice("Liquidità e c/c", liquid, Pal.Blue),
         )
         GlassCard {
             Label("Composizione")
@@ -147,42 +165,62 @@ fun HomeScreen(bal: List<BalRow>) {
                 }
             }
         }
+        MonthList(bal, onEdit)
+    }
+}
+
+@Composable
+private fun MonthList(bal: List<BalRow>, onEdit: (Long) -> Unit) {
+    Label("Mesi registrati", Modifier.padding(start = 4.dp, top = 6.dp))
+    bal.reversed().forEach { m ->
+        GlassCard(onClick = { onEdit(m.id) }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(monthLong(m.date), fontWeight = FontWeight.Bold)
+                    Text("Entrate ${eur(m.income)} · Uscite ${eur(m.expense)}", color = Pal.Muted, fontSize = 12.sp)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(eur(m.total), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    DeltaChip(signed(m.saving), m.saving >= 0)
+                }
+            }
+        }
     }
 }
 
 // ═════════════════════════ AZIONI / MONETARI ═════════════════════════
 
 @Composable
-fun PortfolioScreen(p: Portfolio, accent: Color, unit: String) {
+fun PortfolioScreen(
+    p: Portfolio, accent: Color, unit: String,
+    onAdd: () -> Unit, onEditLot: (Long) -> Unit, onEditPrice: (String) -> Unit,
+) {
+    if (p.lots.isEmpty()) {
+        EmptyState(
+            if (unit == "azioni") "📈" else "🏦", "Nessun acquisto",
+            "Registra i tuoi acquisti di $unit: calcolo valore, plusvalenza e andamento.", "Aggiungi acquisto", onAdd,
+        )
+        return
+    }
     var sel by remember { mutableStateOf<Int?>(null) }
     val series = p.series
-    val capMap = p.capital.toMap()
-    val aligned = series.map { capMap[it.first] }.takeIf { l -> l.isNotEmpty() && l.all { it != null } }?.map { it!! }
 
     Page {
         Spacer(Modifier.height(4.dp))
         GlassCard {
             val s = sel?.let { series.getOrNull(it) }
-            Label(if (s == null) "Valore $unit" else monthLong(s.first))
+            Label(if (s == null) "Valore $unit" else "Versato al " + dayMonth(s.first))
             Spacer(Modifier.height(6.dp))
-            if (s == null) CountUp(p.value, BigNumber, decimals = 0) else Text(eur(s.second), style = BigNumber, maxLines = 1)
+            if (s == null) CountUp(p.value, BigNumber) else Text(eur(s.second), style = BigNumber, maxLines = 1)
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DeltaChip(signed(p.gain) + (p.gainPct?.let { " · " + pct(it) } ?: ""), p.gain >= 0)
-                if (s != null && aligned != null) {
-                    Text("Versato " + eur(aligned[sel!!]), color = Pal.Violet, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterVertically))
-                }
-            }
+            DeltaChip(signed(p.gain) + (p.gainPct?.let { " · " + pct(it) } ?: ""), p.gain >= 0)
             if (series.size >= 2) {
                 Spacer(Modifier.height(14.dp))
-                AreaChart(series.map { it.second }, Modifier.fillMaxWidth().height(180.dp), accent, secondary = aligned, onSelect = { sel = it })
+                AreaChart(series.map { it.second }, Modifier.fillMaxWidth().height(160.dp), accent, onSelect = { sel = it })
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(monthShort(series.first().first) + " ${series.first().first.year % 100}", color = Pal.Muted, fontSize = 11.sp)
-                    if (aligned != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Dot(accent); Text("valore", color = Pal.Muted, fontSize = 11.sp)
-                        Dot(Pal.Violet); Text("versato", color = Pal.Muted, fontSize = 11.sp)
-                    }
-                    Text(monthShort(series.last().first) + " ${series.last().first.year % 100}", color = Pal.Muted, fontSize = 11.sp)
+                    Text(dayMonth(series.first().first), color = Pal.Muted, fontSize = 11.sp)
+                    Text("capitale versato", color = Pal.Muted, fontSize = 11.sp)
+                    Text(dayMonth(series.last().first), color = Pal.Muted, fontSize = 11.sp)
                 }
             }
         }
@@ -191,39 +229,36 @@ fun PortfolioScreen(p: Portfolio, accent: Color, unit: String) {
             Row(Modifier.fillMaxWidth()) {
                 Stat("Investito", eur(p.invested), Modifier.weight(1f))
                 Stat("Plusvalenza", signed(p.gain), Modifier.weight(1f), if (p.gain >= 0) Pal.Emerald else Pal.Rose)
-                Stat("Netto tasse", p.net?.let { signed(it) } ?: "–", Modifier.weight(1f), Pal.Text)
             }
         }
 
-        if (p.lots.isNotEmpty()) {
-            Label("Acquisti (${p.lots.size})", Modifier.padding(start = 4.dp))
-            p.lots.sortedByDescending { it.date }.forEach { LotCard(it) }
-        }
-
-        if (p.deposits.isNotEmpty()) {
-            GlassCard {
-                Label("Versamenti")
-                Spacer(Modifier.height(8.dp))
-                p.deposits.takeLast(8).reversed().forEach { d ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(d.date?.let(::dayMonth) ?: "–", color = Pal.Muted, fontSize = 13.sp, modifier = Modifier.width(84.dp))
-                        Text(d.label ?: "", color = Pal.Muted, fontSize = 12.sp, modifier = Modifier.weight(1f), maxLines = 1)
-                        Text(signed(d.amount), fontWeight = FontWeight.SemiBold, color = if (d.amount >= 0) Pal.Text else Pal.Amber)
+        Label("Prezzi attuali", Modifier.padding(start = 4.dp))
+        p.instruments.forEach { i ->
+            GlassCard(onClick = { onEditPrice(i.name) }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(i.name, fontWeight = FontWeight.Bold)
+                        Text(num(i.qty, 2) + " quote" + if (!i.priceSet) " · prezzo = ultimo acquisto" else "", color = Pal.Muted, fontSize = 12.sp)
                     }
+                    Text(eur(i.price, 2), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = accent)
+                    Text("  ✎", color = Pal.Muted)
                 }
             }
         }
+
+        Label("Acquisti (${p.lots.size})", Modifier.padding(start = 4.dp))
+        p.lots.sortedByDescending { it.date }.forEach { LotCard(it, onEditLot) }
     }
 }
 
 @Composable
-private fun LotCard(l: Lot) {
-    GlassCard {
+private fun LotCard(l: Lot, onClick: (Long) -> Unit) {
+    GlassCard(onClick = { onClick(l.id) }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(l.date?.let(::dayMonth) ?: "–", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(l.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    listOfNotNull(l.qty?.let { num(it, 0) + " quote" }, l.buyPrice?.let { "a " + eur(it, 2) }).joinToString(" "),
+                    listOfNotNull(l.date?.let(::dayMonth), l.qty?.let { num(it, 2) + " quote" }, l.buyPrice?.let { "a " + eur(it, 2) }).joinToString(" · "),
                     color = Pal.Muted, fontSize = 12.sp,
                 )
             }
@@ -239,9 +274,14 @@ private fun LotCard(l: Lot) {
 // ═════════════════════════ RIFORNIMENTI ═════════════════════════
 
 @Composable
-fun FuelScreen(vehicles: List<Vehicle>) {
-    if (vehicles.isEmpty()) { Empty("Nessun rifornimento nel foglio Rif"); return }
-    var idx by remember { mutableIntStateOf(0) }
+fun FuelScreen(
+    vehicles: List<Vehicle>, idx: Int, onIdx: (Int) -> Unit,
+    onAdd: (Long?) -> Unit, onEditFill: (Long) -> Unit,
+) {
+    if (vehicles.isEmpty()) {
+        EmptyState("⛽", "Nessun veicolo", "Registra i rifornimenti: calcolo spesa, prezzo medio e consumi.", "Aggiungi rifornimento") { onAdd(null) }
+        return
+    }
     val v = vehicles[idx.coerceIn(0, vehicles.lastIndex)]
     val priced = v.fills.filter { it.price != null && it.amount > 0 }
 
@@ -254,14 +294,17 @@ fun FuelScreen(vehicles: List<Vehicle>) {
                 val on = i == idx
                 Box(
                     Modifier.background(if (on) Pal.Amber else Pal.Surface2, RoundedCornerShape(50))
-                        .clickableNoRipple { idx = i }.padding(horizontal = 16.dp, vertical = 8.dp),
+                        .clickableNoRipple { onIdx(i) }.padding(horizontal = 16.dp, vertical = 8.dp),
                 ) { Text(it.name, color = if (on) Pal.Bg else Pal.Muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
             }
+            Box(
+                Modifier.background(Pal.Surface2, RoundedCornerShape(50)).clickableNoRipple { onAdd(null) }.padding(horizontal = 16.dp, vertical = 8.dp),
+            ) { Text("＋", color = Pal.Muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
         }
         GlassCard {
             Label("Speso in carburante")
             Spacer(Modifier.height(6.dp))
-            key(v.name) { CountUp(v.spent, BigNumber, decimals = 0) }
+            key(v.id) { CountUp(v.spent, BigNumber, decimals = 0) }
             Text("${v.fills.count { it.amount > 0 }} rifornimenti · ${num(v.liters, 0)} litri", color = Pal.Muted, fontSize = 13.sp)
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth()) {
@@ -273,10 +316,14 @@ fun FuelScreen(vehicles: List<Vehicle>) {
                 Stat("Costo al km", v.costPerKm?.let { eur(it, 3) } ?: "–", Modifier.weight(1f))
                 Stat("Km percorsi", v.kmDriven?.let { num(it, 0) } ?: "–", Modifier.weight(1f))
             }
+            if (v.kmPerLiter == null) {
+                Spacer(Modifier.height(12.dp))
+                Text("Consumi e costo al km compaiono dal secondo rifornimento, indicando i chilometri.", color = Pal.Muted, fontSize = 12.sp)
+            }
         }
 
         if (priced.size >= 2) {
-            var sel by remember(v.name) { mutableStateOf<Int?>(null) }
+            var sel by remember(v.id) { mutableStateOf<Int?>(null) }
             GlassCard {
                 Label("Prezzo al litro")
                 Spacer(Modifier.height(4.dp))
@@ -300,7 +347,7 @@ fun FuelScreen(vehicles: List<Vehicle>) {
 
         Label("Storico", Modifier.padding(start = 4.dp))
         paid.reversed().forEach { f ->
-            GlassCard {
+            GlassCard(onClick = { onEditFill(f.id) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(dayMonth(f.date), fontWeight = FontWeight.Bold)

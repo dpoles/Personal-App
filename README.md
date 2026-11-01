@@ -1,42 +1,24 @@
 # Patrimonio
 
-App Android (Kotlin + Jetpack Compose) che legge in **sola lettura** i primi 4 fogli del tuo Google Sheet
-e li mostra in una dashboard: **Patrimonio** (Bal), **Azioni**, **Monetari** e **Auto** (Rif, rifornimenti).
+App Android (Kotlin + Jetpack Compose) per gestire a mano il proprio patrimonio, gli investimenti e i
+rifornimenti di carburante. Parte vuota: i dati si inseriscono con dei moduli e restano **solo sul telefono**
+(un file JSON privato dell'app). Nessun account, nessuna rete.
 
-- Grafici disegnati a mano (area con proiezione tratteggiata, ciambella, barre), trascinabili.
-- Modalità privacy (occhio in alto) che nasconde tutti gli importi.
-- Pull-to-refresh e copia locale dell'ultimo download: funziona anche offline.
-- Nessun dato è incorporato nell'app: viene letto dal foglio con il tuo login Google.
-- La struttura attesa del foglio è descritta in [`docs/STRUTTURA_FOGLIO.md`](docs/STRUTTURA_FOGLIO.md).
+- **Patrimonio**: un record per mese (entrate, uscite, liquidità, deposito, azioni, monetari) con andamento,
+  composizione e risparmio.
+- **Azioni** e **Monetari**: acquisti, prezzo attuale per strumento, valore e plusvalenza.
+- **Auto**: rifornimenti per veicolo, con spesa, prezzo medio, consumo e costo al km.
+- Grafici disegnati a mano, modalità privacy (occhio in alto) che nasconde gli importi.
 
-## Come caricare i dati
-
-**Modo semplice (nessun login):** in Google Sheets scegli *File → Scarica → Microsoft Excel (.xlsx)*, poi apri il
-file con **Patrimonio** (dal gestore file, da Drive o da *Condividi*) oppure tocca **Importa file Excel** nell'app.
-Il file viene letto sul telefono e non viene inviato da nessuna parte; per aggiornare i dati reimporta il file (📥).
-
-**Modo avanzato (aggiornamento automatico):** accesso con Google, vedi sotto.
-
-## Configurare l'accesso a Google (solo per il modo avanzato)
-
-1. Su <https://console.cloud.google.com> crea un progetto e abilita **Google Sheets API**.
-2. *Schermata consenso OAuth*: tipo **Esterno**, stato "Test", aggiungi il tuo account Google tra gli **utenti di test**.
-   Aggiungi lo scope `.../auth/spreadsheets.readonly`.
-3. *Credenziali → Crea credenziali → ID client OAuth → Android*:
-   - Nome pacchetto: `com.dpoles.patrimonio`
-   - Impronta SHA-1: `75:BA:54:A5:F7:DA:36:44:A7:46:4D:AE:1E:CF:B6:B1:FF:06:F8:20`
-     (è la chiave di debug fissa in `app/debug.keystore`, quindi non cambia a ogni build).
-4. Installa l'APK e tocca **Accedi con Google**.
-
-Se in futuro cambi il file Google Sheet, aggiorna `SHEET_ID` in `app/src/main/java/com/dpoles/patrimonio/data/SheetsApi.kt`.
+Il layout del foglio di partenza dell'autore è descritto in [`docs/STRUTTURA_FOGLIO.md`](docs/STRUTTURA_FOGLIO.md)
+(riferimento per i campi; l'app non lo legge).
 
 ## Build
 
 ```
-gradle :app:assembleDebug        # richiede JDK 17 e Android SDK 35
+gradle :app:assembleDebug        # JDK 17 e Android SDK 35
 ```
 
-L'APK esce in `app/build/outputs/apk/debug/app-debug.apk`. La GitHub Action `Build APK` lo produce a ogni push
-(scaricalo dagli *Artifacts* della run).
-
-> `app/debug.keystore` è una chiave di debug pubblica, non protegge nulla: serve solo ad avere uno SHA-1 stabile.
+L'APK esce in `app/build/outputs/apk/debug/app-debug.apk`; la GitHub Action `Build APK` lo produce a ogni push.
+`app/debug.keystore` è una chiave di debug pubblica e fissa: serve a poter aggiornare l'app installata
+senza perdere i dati (stessa firma ogni volta). Non protegge nulla.

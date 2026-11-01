@@ -78,14 +78,17 @@ fun monthLong(d: LocalDate): String =
 fun dayMonth(d: LocalDate) = "${d.dayOfMonth} ${monthShort(d)} ${d.year % 100}"
 
 @Composable
-fun GlassCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun GlassCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         color = Pal.Surface,
         border = BorderStroke(1.dp, Brush.verticalGradient(listOf(Pal.Line, Pal.Line.copy(alpha = 0.3f)))),
     ) {
-        Column(Modifier.padding(18.dp), content = content)
+        Column(
+            (if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(18.dp),
+            content = content,
+        )
     }
 }
 
@@ -142,4 +145,27 @@ fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = composed {
         interactionSource = remember { MutableInteractionSource() },
         indication = null, onClick = onClick,
     )
+}
+
+@Composable
+fun EmptyState(emoji: String, title: String, text: String, button: String, onClick: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            Modifier.size(96.dp).background(Brush.linearGradient(listOf(Pal.Surface2, Pal.Surface)), RoundedCornerShape(28.dp)),
+            contentAlignment = Alignment.Center,
+        ) { Text(emoji, fontSize = 44.sp) }
+        Spacer(Modifier.height(24.dp))
+        Text(title, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(8.dp))
+        Text(text, color = Pal.Muted, fontSize = 15.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Spacer(Modifier.height(28.dp))
+        Button(
+            onClick = onClick, shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(containerColor = Pal.Emerald, contentColor = Pal.Bg),
+            contentPadding = PaddingValues(horizontal = 30.dp, vertical = 14.dp),
+        ) { Text(button, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+    }
 }
