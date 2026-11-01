@@ -29,7 +29,7 @@ fun PatrimonioApp(ui: Ui, onRefresh: () -> Unit, onLogin: () -> Unit) {
     var hide by rememberSaveable { mutableStateOf(false) }
     val data = ui.data
 
-    CompositionLocalProvider(LocalHide provides hide) {
+    CompositionLocalProvider(LocalHide provides hide, LocalContentColor provides Pal.Text) {
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(listOf(Pal.Surface2.copy(alpha = 0.6f), Pal.Bg), endY = 900f)
