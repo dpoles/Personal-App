@@ -46,6 +46,17 @@ object SheetsApi {
         }
     }
 
+    /** Stesso formato della risposta dell'API, così la cache è unica. */
+    fun toJson(grids: Map<String, Grid>): String {
+        val ranges = JSONArray()
+        for ((name, _) in RANGES) {
+            val rows = JSONArray()
+            for (r in grids[name].orEmpty()) rows.put(JSONArray().also { a -> r.forEach { a.put(it ?: JSONObject.NULL) } })
+            ranges.put(JSONObject().put("values", rows))
+        }
+        return JSONObject().put("valueRanges", ranges).toString()
+    }
+
     fun parse(json: String): Map<String, Grid> {
         val arr = JSONObject(json).getJSONArray("valueRanges")
         val out = mutableMapOf<String, Grid>()

@@ -9,7 +9,15 @@ e li mostra in una dashboard: **Patrimonio** (Bal), **Azioni**, **Monetari** e *
 - Nessun dato è incorporato nell'app: viene letto dal foglio con il tuo login Google.
 - La struttura attesa del foglio è descritta in [`docs/STRUTTURA_FOGLIO.md`](docs/STRUTTURA_FOGLIO.md).
 
-## Configurare l'accesso a Google (una volta sola)
+## Come caricare i dati
+
+**Modo semplice (nessun login):** in Google Sheets scegli *File → Scarica → Microsoft Excel (.xlsx)*, poi apri il
+file con **Patrimonio** (dal gestore file, da Drive o da *Condividi*) oppure tocca **Importa file Excel** nell'app.
+Il file viene letto sul telefono e non viene inviato da nessuna parte; per aggiornare i dati reimporta il file (📥).
+
+**Modo avanzato (aggiornamento automatico):** accesso con Google, vedi sotto.
+
+## Configurare l'accesso a Google (solo per il modo avanzato)
 
 1. Su <https://console.cloud.google.com> crea un progetto e abilita **Google Sheets API**.
 2. *Schermata consenso OAuth*: tipo **Esterno**, stato "Test", aggiungi il tuo account Google tra gli **utenti di test**.

@@ -24,7 +24,7 @@ private val TABS = listOf(Tab("Patrimonio", "💰"), Tab("Azioni", "📈"), Tab(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PatrimonioApp(ui: Ui, onRefresh: () -> Unit, onLogin: () -> Unit) {
+fun PatrimonioApp(ui: Ui, onRefresh: () -> Unit, onLogin: () -> Unit, onImport: () -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var hide by rememberSaveable { mutableStateOf(false) }
     val data = ui.data
@@ -36,7 +36,7 @@ fun PatrimonioApp(ui: Ui, onRefresh: () -> Unit, onLogin: () -> Unit) {
             )
         ) {
             if (data == null) {
-                LoginScreen(ui, onLogin, onRefresh)
+                LoginScreen(ui, onLogin, onRefresh, onImport)
             } else {
                 Scaffold(
                     containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -49,13 +49,14 @@ fun PatrimonioApp(ui: Ui, onRefresh: () -> Unit, onLogin: () -> Unit) {
                                 Text(TABS[tab].title, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
                                 val sub = if (ui.error != null) "⚠ ${ui.error}"
                                 else if (ui.needsLogin) "Offline · tocca per accedere"
-                                else "Aggiornato " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(data.updatedAt))
+                                else (if (ui.mode == "file") "Da file · " else "Aggiornato ") + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(data.updatedAt))
                                 Text(
                                     sub, fontSize = 12.sp,
                                     color = if (ui.error != null) Pal.Rose else Pal.Muted,
                                     modifier = if (ui.needsLogin) Modifier.clickableNoRipple(onLogin) else Modifier,
                                 )
                             }
+                            Text("📥", fontSize = 22.sp, modifier = Modifier.clickableNoRipple(onImport).padding(8.dp))
                             Text(if (hide) "🙈" else "👁", fontSize = 22.sp, modifier = Modifier.clickableNoRipple { hide = !hide }.padding(8.dp))
                         }
                     },
@@ -106,7 +107,7 @@ private fun Section(err: String?, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun LoginScreen(ui: Ui, onLogin: () -> Unit, onRetry: () -> Unit) {
+private fun LoginScreen(ui: Ui, onLogin: () -> Unit, onRetry: () -> Unit, onImport: () -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(32.dp).systemBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
@@ -119,16 +120,23 @@ private fun LoginScreen(ui: Ui, onLogin: () -> Unit, onRetry: () -> Unit) {
         Text("Patrimonio", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Il tuo foglio Google, in una dashboard.\nAccedi per leggere i dati in sola lettura.",
+            "Scarica il foglio da Google Sheets come Excel (.xlsx) e aprilo qui.\nI dati restano solo su questo telefono.",
             color = Pal.Muted, textAlign = TextAlign.Center, fontSize = 15.sp,
         )
         Spacer(Modifier.height(32.dp))
         if (ui.loading) CircularProgressIndicator(color = Pal.Emerald)
-        else Button(
-            onClick = { if (ui.needsLogin) onLogin() else onRetry() },
-            colors = ButtonDefaults.buttonColors(containerColor = Pal.Emerald, contentColor = Pal.Bg),
-            shape = RoundedCornerShape(50), contentPadding = PaddingValues(horizontal = 32.dp, vertical = 14.dp),
-        ) { Text(if (ui.needsLogin) "Accedi con Google" else "Riprova", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+        else {
+            Button(
+                onClick = onImport,
+                colors = ButtonDefaults.buttonColors(containerColor = Pal.Emerald, contentColor = Pal.Bg),
+                shape = RoundedCornerShape(50), contentPadding = PaddingValues(horizontal = 32.dp, vertical = 14.dp),
+            ) { Text("Importa file Excel", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Avanzato: accedi con Google", color = Pal.Muted, fontSize = 13.sp,
+                modifier = Modifier.clickableNoRipple { if (ui.needsLogin) onLogin() else onRetry() }.padding(10.dp),
+            )
+        }
         ui.error?.let {
             Spacer(Modifier.height(20.dp))
             Text(it, color = Pal.Rose, fontSize = 13.sp, textAlign = TextAlign.Center)
