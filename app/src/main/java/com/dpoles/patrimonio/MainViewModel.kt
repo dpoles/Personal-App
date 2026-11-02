@@ -27,9 +27,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val importPreview = MutableStateFlow<ImportPreview?>(null)
     val message = MutableStateFlow<String?>(null)
+    val importing = MutableStateFlow(false)
 
     /** Legge il file Excel sul telefono e mostra un riepilogo; i dati cambiano solo dopo la conferma. */
     fun prepareImport(uri: Uri) {
+        importing.value = true
         viewModelScope.launch {
             try {
                 val res = withContext(Dispatchers.IO) {
@@ -42,10 +44,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 importPreview.value = ImportPreview(res, d.months.isNotEmpty() || d.fills.isNotEmpty() || d.lots.isNotEmpty())
             } catch (e: Exception) {
                 message.value = "Import non riuscito: " + (e.message ?: e.javaClass.simpleName)
+            } catch (e: Throwable) {
+                message.value = "Import non riuscito: " + e.javaClass.simpleName
+            } finally {
+                importing.value = false
             }
         }
     }
-    fun confirmImport() { importPreview.value?.let { p -> mutate { p.result.db } }; importPreview.value = null }
+    fun confirmImport() {
+        importPreview.value?.let { p ->
+            mutate { p.result.db }
+            message.value = "Importati ${p.result.months} mesi, ${p.result.vehicles} veicoli (${p.result.fills} rifornimenti) e ${p.result.lots} acquisti."
+        }
+        importPreview.value = null
+    }
     fun cancelImport() { importPreview.value = null }
     fun dismissMessage() { message.value = null }
 

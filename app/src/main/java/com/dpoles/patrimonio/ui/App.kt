@@ -31,6 +31,7 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     val preview by vm.importPreview.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val importing by vm.importing.collectAsStateWithLifecycle()
 
     val bal = remember(db) { db.balRows() }
     val azioni = remember(db) { db.portfolio(AZIONI) }
@@ -105,9 +106,15 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
                     containerColor = Pal.Surface, titleContentColor = Pal.Text, textContentColor = Pal.Muted,
                 )
             }
+            if (importing) AlertDialog(
+                onDismissRequest = {}, confirmButton = {},
+                title = { Text("Lettura del file Excel…") },
+                text = { LinearProgressIndicator(color = Pal.Emerald, trackColor = Pal.Surface2, modifier = Modifier.fillMaxWidth()) },
+                containerColor = Pal.Surface, titleContentColor = Pal.Text,
+            )
             message?.let { m ->
                 AlertDialog(
-                    onDismissRequest = vm::dismissMessage, title = { Text("Attenzione") }, text = { Text(m) },
+                    onDismissRequest = vm::dismissMessage, title = { Text("Importazione") }, text = { Text(m) },
                     confirmButton = { TextButton(vm::dismissMessage) { Text("OK", color = Pal.Emerald) } },
                     containerColor = Pal.Surface, titleContentColor = Pal.Text, textContentColor = Pal.Muted,
                 )

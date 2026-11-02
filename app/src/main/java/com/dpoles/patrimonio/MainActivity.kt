@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handle(intent)
+        if (savedInstanceState == null) handle(intent)
         setContent {
             AppTheme {
                 val db by vm.db.collectAsStateWithLifecycle()
@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
                     uri?.let(vm::prepareImport)
                 }
                 PatrimonioApp(db, vm) {
-                    picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream", "*/*"))
+                    picker.launch(arrayOf("*/*"))
                 }
             }
         }
