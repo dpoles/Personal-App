@@ -32,6 +32,7 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
     val preview by vm.importPreview.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val importing by vm.importing.collectAsStateWithLifecycle()
+    var importMenu by remember { mutableStateOf(false) }
 
     val bal = remember(db) { db.balRows() }
     val azioni = remember(db) { db.portfolio(AZIONI) }
@@ -54,7 +55,7 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(TABS[tab].title, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-                        Text("📥", fontSize = 22.sp, modifier = Modifier.clickableNoRipple(onImport).padding(8.dp))
+                        Text("📥", fontSize = 22.sp, modifier = Modifier.clickableNoRipple { importMenu = true }.padding(8.dp))
                         Text(if (hide) "🙈" else "👁", fontSize = 22.sp, modifier = Modifier.clickableNoRipple { hide = !hide }.padding(8.dp))
                     }
                 },
@@ -83,7 +84,7 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
             ) { pad ->
                 Box(Modifier.padding(pad)) {
                     when (tab) {
-                        0 -> HomeScreen(bal, onAdd = ::add, onEdit = { sheet = Sheet.EditMonth(it) }, onImport = onImport)
+                        0 -> HomeScreen(bal, onAdd = ::add, onEdit = { sheet = Sheet.EditMonth(it) }, onImport = { importMenu = true })
                         1 -> PortfolioScreen(azioni, Pal.Violet, "azioni", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(AZIONI, it) })
                         2 -> PortfolioScreen(monetari, Pal.Cyan, "monetari", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(MONETARI, it) })
                         else -> FuelScreen(vehicles, vehIdx, { vehIdx = it }, { sheet = Sheet.NewFill(it ?: currentVehicle).takeIf { _ -> it != null } ?: Sheet.NewFill(null) }, { sheet = Sheet.EditFill(it) }, { sheet = Sheet.EditVehicle(it) })
@@ -106,9 +107,24 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
                     containerColor = Pal.Surface, titleContentColor = Pal.Text, textContentColor = Pal.Muted,
                 )
             }
+            if (importMenu) AlertDialog(
+                onDismissRequest = { importMenu = false },
+                title = { Text("Importa i dati") },
+                text = {
+                    Column {
+                        Text("Sostituisce i dati dell'app, dopo un riepilogo e la tua conferma.", color = Pal.Muted, fontSize = 13.sp)
+                        Spacer(Modifier.height(10.dp))
+                        TextButton({ importMenu = false; vm.importFromGoogle() }) { Text("Da Google Sheets (documento Balance)", color = Pal.Emerald) }
+                        TextButton({ importMenu = false; onImport() }) { Text("Da file Excel (.xlsx)", color = Pal.Emerald) }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton({ importMenu = false }) { Text("Annulla", color = Pal.Muted) } },
+                containerColor = Pal.Surface, titleContentColor = Pal.Text, textContentColor = Pal.Text,
+            )
             if (importing) AlertDialog(
                 onDismissRequest = {}, confirmButton = {},
-                title = { Text("Lettura del file Excel…") },
+                title = { Text("Lettura dei dati…") },
                 text = { LinearProgressIndicator(color = Pal.Emerald, trackColor = Pal.Surface2, modifier = Modifier.fillMaxWidth()) },
                 containerColor = Pal.Surface, titleContentColor = Pal.Text,
             )

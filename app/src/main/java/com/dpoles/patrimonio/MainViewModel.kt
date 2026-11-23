@@ -13,7 +13,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import android.app.PendingIntent
+import android.content.Intent
 import android.net.Uri
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.Scope
+import kotlinx.coroutines.tasks.await
 import java.io.File
 import kotlin.random.Random
 
@@ -28,6 +34,60 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val importPreview = MutableStateFlow<ImportPreview?>(null)
     val message = MutableStateFlow<String?>(null)
     val importing = MutableStateFlow(false)
+    val googlePending = MutableStateFlow<PendingIntent?>(null)
+
+    private val client by lazy { Identity.getAuthorizationClient(getApplication<Application>()) }
+    private val request by lazy {
+        AuthorizationRequest.builder().setRequestedScopes(listOf(Scope(SheetsApi.SCOPE))).build()
+    }
+
+    /** Legge il documento Balance da Google Sheets (sola lettura) e mostra il riepilogo dell'import. */
+    fun importFromGoogle() {
+        if (importing.value) return
+        importing.value = true
+        viewModelScope.launch {
+            try {
+                val res = client.authorize(request).await()
+                if (res.hasResolution()) {
+                    googlePending.value = res.pendingIntent   // schermata di consenso: la apre l'Activity
+                    importing.value = false
+                } else {
+                    downloadFromGoogle(res.accessToken ?: error("Token non disponibile"))
+                }
+            } catch (e: Throwable) { fail(e) }
+        }
+    }
+
+    fun onConsentResult(data: Intent?) {
+        googlePending.value = null
+        importing.value = true
+        viewModelScope.launch {
+            try {
+                val res = client.getAuthorizationResultFromIntent(data)
+                downloadFromGoogle(res.accessToken ?: error("Accesso non concesso"))
+            } catch (e: Throwable) { fail(e) }
+        }
+    }
+    fun consentLaunched() { googlePending.value = null }
+
+    private suspend fun downloadFromGoogle(token: String) {
+        try {
+            val res = withContext(Dispatchers.IO) { ExcelImport.build(SheetsApi.parse(SheetsApi.fetchRaw(token))) }
+            val d = _db.value
+            importPreview.value = ImportPreview(res, d.months.isNotEmpty() || d.fills.isNotEmpty() || d.lots.isNotEmpty())
+            importing.value = false
+        } catch (e: Throwable) { fail(e) }
+    }
+
+    private fun fail(e: Throwable) {
+        importing.value = false
+        val m = e.message ?: e.javaClass.simpleName
+        message.value = when {
+            "UNREGISTERED_ON_API_CONSOLE" in m -> "Google non riconosce l'app. Controlla su Google Cloud il client OAuth Android: nome pacchetto com.dpoles.patrimonio e impronta SHA-1 della chiave di debug.\n\n($m)"
+            e is AuthExpired -> "Sessione scaduta: riprova l'importazione."
+            else -> "Import non riuscito: $m"
+        }
+    }
 
     /** Legge il file Excel sul telefono e mostra un riepilogo; i dati cambiano solo dopo la conferma. */
     fun prepareImport(uri: Uri) {
