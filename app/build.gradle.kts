@@ -28,7 +28,13 @@ android {
     }
 
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // stessa chiave fissa di debug: stesso SHA-1 per l'accesso Google e aggiornamento sopra l'app installata
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -30,6 +30,10 @@ Il layout del foglio di partenza dell'autore è descritto in [`docs/STRUTTURA_FO
 
 ## Build
 
+Versione leggera (consigliata, ~2 MB, ottimizzata con R8): `gradle :app:assembleRelease` →
+`app/build/outputs/apk/release/app-release.apk`. È firmata con la stessa chiave fissa della debug (stesso SHA-1,
+aggiorna l'app installata senza perdere i dati).
+
 ```
 gradle :app:assembleDebug        # JDK 17 e Android SDK 35
 ```
