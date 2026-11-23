@@ -27,9 +27,11 @@ object ExcelImport {
         val months = months(g["Bal"] ?: error("Foglio 'Bal' mancante"))
         val (vehicles, fills) = rif(g["Rif"] ?: error("Foglio 'Rif' mancante"))
         val prices = mutableMapOf<String, Double>()
-        val lots = lots(g["Azioni"] ?: error("Foglio 'Azioni' mancante"), AZIONI, prices) +
-            lots(g["Monetari"] ?: error("Foglio 'Monetari' mancante"), MONETARI, prices)
-        val db = Db(months, vehicles, fills, lots, prices)
+        val symbols = mutableMapOf<String, String>()
+        val taxes = mutableMapOf<String, Double>()
+        val lots = lots(g["Azioni"] ?: error("Foglio 'Azioni' mancante"), AZIONI, prices, symbols, taxes) +
+            lots(g["Monetari"] ?: error("Foglio 'Monetari' mancante"), MONETARI, prices, symbols, taxes)
+        val db = Db(months, vehicles, fills, lots, prices, symbols, taxRates = taxes)
         return Result(db, months.size, vehicles.size, fills.count { it.amount > 0 }, lots.size)
     }
 
@@ -95,7 +97,9 @@ object ExcelImport {
     }
 
     // ───── Azioni / Monetari: un acquisto per riga ─────
-    private fun lots(g: Grid, kind: String, prices: MutableMap<String, Double>): List<LotE> {
+    private val TICKER = Regex("-([a-z0-9]{2,8})-[a-z]{2}[a-z0-9]{9}[0-9](?:-|/|$)", RegexOption.IGNORE_CASE)
+
+    private fun lots(g: Grid, kind: String, prices: MutableMap<String, Double>, symbols: MutableMap<String, String>, taxes: MutableMap<String, Double>): List<LotE> {
         val end = g.indices.firstOrNull { g.str(it, 0)?.startsWith("TOTALE INVESTITO", true) == true } ?: g.size
         val out = mutableListOf<LotE>()
         for (r in 2 until end) {
@@ -105,6 +109,9 @@ object ExcelImport {
             val price = g.num(r, 4) ?: continue
             out += LotE(id(), kind, name, date, qty, price, g.num(r, 6) ?: 0.0)
             g.num(r, 9)?.takeIf { it > 0 }?.let { prices["$kind|$name"] = it }   // prezzo attuale (ultima riga vince)
+            g.num(r, 13)?.takeIf { it in 0.0..0.6 }?.let { taxes["$kind|$name"] = it }   // aliquota sulle plusvalenze (colonna Tax %)
+            // simbolo per la quotazione live: ticker ricavato dal link Teleborsa (es. ...-vwce-ie00bk5bqt80 -> VWCE.DE)
+            g.str(r, 2)?.let { url -> TICKER.find(url)?.groupValues?.get(1)?.let { symbols.putIfAbsent("$kind|$name", it.uppercase() + ".DE") } }
         }
         return out
     }

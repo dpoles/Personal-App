@@ -31,6 +31,8 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     val preview by vm.importPreview.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val quotes by vm.quotes.collectAsStateWithLifecycle()
+    val quoteError by vm.quoteError.collectAsStateWithLifecycle()
     val importing by vm.importing.collectAsStateWithLifecycle()
     var importMenu by remember { mutableStateOf(false) }
 
@@ -38,6 +40,14 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
     val azioni = remember(db) { db.portfolio(AZIONI) }
     val monetari = remember(db) { db.portfolio(MONETARI) }
     val vehicles = remember(db) { db.vehicleList() }
+    // Valore live: i titoli del mese registrato vengono rivalutati con le quotazioni attuali
+    val lastMonth = bal.lastOrNull()
+    val liveDelta = if (lastMonth == null) 0.0 else
+        (if (azioni.lots.isNotEmpty()) azioni.value - lastMonth.azioni else 0.0) +
+            (if (monetari.lots.isNotEmpty()) monetari.value - lastMonth.monetari else 0.0)
+    val invGrowth = (azioni.projValue - azioni.value) + (monetari.projValue - monetari.value)
+    val taxNow = azioni.taxDue + monetari.taxDue
+    val taxProj = azioni.projTax + monetari.projTax
     val currentVehicle = vehicles.getOrNull(vehIdx.coerceIn(0, (vehicles.size - 1).coerceAtLeast(0)))?.id
 
     fun add() { sheet = when (tab) { 0 -> Sheet.NewMonth; 1 -> Sheet.NewLot(AZIONI); 2 -> Sheet.NewLot(MONETARI); else -> Sheet.NewFill(currentVehicle) } }
@@ -84,9 +94,9 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
             ) { pad ->
                 Box(Modifier.padding(pad)) {
                     when (tab) {
-                        0 -> HomeScreen(bal, onAdd = ::add, onEdit = { sheet = Sheet.EditMonth(it) }, onImport = { importMenu = true })
-                        1 -> PortfolioScreen(azioni, Pal.Violet, "azioni", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(AZIONI, it) })
-                        2 -> PortfolioScreen(monetari, Pal.Cyan, "monetari", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(MONETARI, it) })
+                        0 -> HomeScreen(bal, onAdd = ::add, onEdit = { sheet = Sheet.EditMonth(it) }, onImport = { importMenu = true }, liveDelta = liveDelta, invGrowth = invGrowth, taxNow = taxNow, taxProj = taxProj)
+                        1 -> PortfolioScreen(azioni, Pal.Violet, "azioni", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(AZIONI, it) }, quotes.filterKeys { it.startsWith("$AZIONI|") }, quoteError)
+                        2 -> PortfolioScreen(monetari, Pal.Cyan, "monetari", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(MONETARI, it) }, quotes.filterKeys { it.startsWith("$MONETARI|") }, quoteError)
                         else -> FuelScreen(vehicles, vehIdx, { vehIdx = it }, { sheet = Sheet.NewFill(it ?: currentVehicle).takeIf { _ -> it != null } ?: Sheet.NewFill(null) }, { sheet = Sheet.EditFill(it) }, { sheet = Sheet.EditVehicle(it) })
                     }
                 }
@@ -150,10 +160,10 @@ private fun SheetHost(s: Sheet, db: Db, vm: MainViewModel, close: () -> Unit) {
         is Sheet.EditLot -> db.lots.firstOrNull { it.id == s.id }?.let { l ->
             LotForm(db, l.kind, l, { vm.saveLot(it); close() }, { vm.deleteLot(l.id); close() }, close)
         }
-        is Sheet.EditPrice -> PriceForm(
-            db.portfolio(s.kind).instruments.firstOrNull { it.name == s.name }?.price ?: 0.0, s.name,
-            { vm.setPrice(s.kind, s.name, it); close() }, close,
-        )
+        is Sheet.EditPrice -> {
+            val inst = db.portfolio(s.kind).instruments.firstOrNull { it.name == s.name }
+            PriceForm(inst?.price ?: 0.0, s.name, inst?.symbol, inst?.taxRate ?: DEFAULT_TAX, { price, sym, tax -> vm.setPrice(s.kind, s.name, price, sym, tax); vm.refreshQuotes(); close() }, close)
+        }
         is Sheet.NewFill -> FillForm(db, s.vehicleId, null, { f, n -> vm.saveFill(f, n); close() }, null, close)
         is Sheet.EditVehicle -> db.vehicles.firstOrNull { it.id == s.id }?.let { v ->
             val first = db.fills.filter { it.vehicleId == v.id && it.km != null }.minByOrNull { it.date }

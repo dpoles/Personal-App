@@ -12,7 +12,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import kotlinx.coroutines.delay
 import com.dpoles.patrimonio.ui.AppTheme
 import com.dpoles.patrimonio.ui.PatrimonioApp
 
@@ -28,6 +32,13 @@ class MainActivity : ComponentActivity() {
                 val db by vm.db.collectAsStateWithLifecycle()
                 val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                     uri?.let(vm::prepareImport)
+                }
+                val lifecycleOwner = LocalLifecycleOwner.current
+                LaunchedEffect(Unit) {
+                    // quotazioni in tempo reale: all'apertura e poi ogni minuto, finché l'app è visibile
+                    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        while (true) { vm.refreshQuotes(); delay(60_000) }
+                    }
                 }
                 val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
                     vm.onConsentResult(it.data)

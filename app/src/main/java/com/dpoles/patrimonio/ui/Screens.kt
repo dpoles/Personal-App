@@ -39,7 +39,10 @@ private fun Dot(color: Color) = Box(Modifier.size(10.dp).background(color, Circl
 // ═════════════════════════ PATRIMONIO ═════════════════════════
 
 @Composable
-fun HomeScreen(bal: List<BalRow>, onAdd: () -> Unit, onEdit: (Long) -> Unit, onImport: () -> Unit) {
+fun HomeScreen(
+    bal: List<BalRow>, onAdd: () -> Unit, onEdit: (Long) -> Unit, onImport: () -> Unit,
+    liveDelta: Double = 0.0, invGrowth: Double = 0.0, taxNow: Double = 0.0, taxProj: Double = 0.0,
+) {
     if (bal.isEmpty()) {
         EmptyState("💰", "Il tuo patrimonio", "Registra il primo mese: entrate, uscite e quanto hai su conti, depositi e investimenti.", "Aggiungi il primo mese", onAdd, "oppure importa da Excel" to onImport)
         return
@@ -74,15 +77,19 @@ fun HomeScreen(bal: List<BalRow>, onAdd: () -> Unit, onEdit: (Long) -> Unit, onI
     Page {
         Spacer(Modifier.height(4.dp))
         GlassCard {
-            Label(if (sel == null) "Patrimonio · ${monthLong(cur.date)}" else
+            Label(if (sel == null) "Patrimonio · ${monthLong(cur.date)}" + (if (liveDelta != 0.0) " · live" else "") else
                 monthLong(shown.date) + if (shown.isProjection) " · previsione" else "")
             Spacer(Modifier.height(6.dp))
-            if (sel == null) CountUp(cur.total, BigNumber)
+            if (sel == null) CountUp(cur.total + liveDelta, BigNumber)
             else Text(eur(shown.total), style = BigNumber, color = Pal.Text, maxLines = 1)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (prev != null) { val d = shown.total - (bal.getOrNull(bal.indexOf(shown) - 1)?.total ?: prev.total); DeltaChip(signed(d) + " mese", d >= 0) }
-                if (yearAgo != null && sel == null) { val d = cur.total - yearAgo.total; DeltaChip(signed(d) + " 12 mesi", d >= 0) }
+                if (prev != null) { val d = shown.total + (if (sel == null) liveDelta else 0.0) - (bal.getOrNull(bal.indexOf(shown) - 1)?.total ?: prev.total); DeltaChip(signed(d) + " mese", d >= 0) }
+                if (yearAgo != null && sel == null) { val d = cur.total + liveDelta - yearAgo.total; DeltaChip(signed(d) + " 12 mesi", d >= 0) }
+            }
+            if (sel == null && taxNow > 0) {
+                Spacer(Modifier.height(8.dp))
+                Text("Al netto delle tasse sugli investimenti: " + eur(cur.total + liveDelta - taxNow), color = Pal.Muted, fontSize = 12.sp)
             }
             Spacer(Modifier.height(14.dp))
             AreaChart(
@@ -165,7 +172,44 @@ fun HomeScreen(bal: List<BalRow>, onAdd: () -> Unit, onEdit: (Long) -> Unit, onI
                 }
             }
         }
+        EndOfYearCard(bal, cur.total + liveDelta, invGrowth, taxProj)
         MonthList(bal, onEdit)
+    }
+}
+
+@Composable
+private fun EndOfYearCard(bal: List<BalRow>, totalNow: Double, invGrowth: Double, taxProj: Double) {
+    val today = java.time.LocalDate.now()
+    val monthsLeft = (12 - today.monthValue).coerceAtLeast(0)
+    val flow = bal.filter { it.type == 'A' }.takeLast(12)
+    val saving = if (flow.isEmpty()) 0.0 else flow.map { it.saving }.average() * monthsLeft
+    val projected = totalNow + invGrowth + saving
+    GlassCard {
+        Label("Proiezione a fine anno · Dic ${today.year}")
+        Spacer(Modifier.height(6.dp))
+        Text(eur(projected), style = BigNumber, maxLines = 1)
+        Spacer(Modifier.height(10.dp))
+        listOf(
+            "Patrimonio oggi (live)" to totalNow,
+            "+ Crescita degli investimenti" to invGrowth,
+            "+ Risparmio previsto ($monthsLeft ${if (monthsLeft == 1) "mese" else "mesi"})" to saving,
+        ).forEach { (l, v) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                Text(l, color = Pal.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(if (l.startsWith("+")) signed(v) else eur(v), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            }
+        }
+        if (taxProj > 0) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                Text("Netto delle tasse sugli investimenti", color = Pal.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(eur(projected - taxProj), fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Pal.Emerald)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Stima: gli investimenti proseguono al rendimento storico di ogni acquisto (prudente per quelli recenti) e il risparmio è la media degli ultimi mesi.",
+            color = Pal.Muted, fontSize = 11.sp,
+        )
     }
 }
 
@@ -194,6 +238,7 @@ private fun MonthList(bal: List<BalRow>, onEdit: (Long) -> Unit) {
 fun PortfolioScreen(
     p: Portfolio, accent: Color, unit: String,
     onAdd: () -> Unit, onEditLot: (Long) -> Unit, onEditPrice: (String) -> Unit,
+    quotes: Map<String, Quote> = emptyMap(), quoteError: String? = null,
 ) {
     if (p.lots.isEmpty()) {
         EmptyState(
@@ -213,7 +258,20 @@ fun PortfolioScreen(
             Spacer(Modifier.height(6.dp))
             if (s == null) CountUp(p.value, BigNumber) else Text(eur(s.second), style = BigNumber, maxLines = 1)
             Spacer(Modifier.height(8.dp))
-            DeltaChip(signed(p.gain) + (p.gainPct?.let { " · " + pct(it) } ?: ""), p.gain >= 0)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DeltaChip(signed(p.gain) + (p.gainPct?.let { " · " + pct(it) } ?: "") + " lordo", p.gain >= 0)
+                DeltaChip(signed(p.netGain) + " netto", p.netGain >= 0)
+            }
+            val liveAt = p.instruments.mapNotNull { it.quoteAt }.maxOrNull()
+            if (liveAt != null && liveAt > 0) {
+                Spacer(Modifier.height(8.dp))
+                val live = quotes.isNotEmpty()
+                Text(
+                    (if (live) "● Live · " else "○ Ultima quotazione · ") + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(liveAt)),
+                    color = if (live) Pal.Emerald else Pal.Muted, fontSize = 12.sp,
+                )
+            }
+            quoteError?.let { Spacer(Modifier.height(6.dp)); Text("⚠ $it", color = Pal.Rose, fontSize = 12.sp) }
             if (series.size >= 2) {
                 Spacer(Modifier.height(14.dp))
                 AreaChart(series.map { it.second }, Modifier.fillMaxWidth().height(160.dp), accent, onSelect = { sel = it })
@@ -228,8 +286,29 @@ fun PortfolioScreen(
         GlassCard {
             Row(Modifier.fillMaxWidth()) {
                 Stat("Investito", eur(p.invested), Modifier.weight(1f))
-                Stat("Plusvalenza", signed(p.gain), Modifier.weight(1f), if (p.gain >= 0) Pal.Emerald else Pal.Rose)
+                Stat("Plusvalenza lorda", signed(p.gain), Modifier.weight(1f), if (p.gain >= 0) Pal.Emerald else Pal.Rose)
             }
+        }
+
+        GlassCard {
+            Row(Modifier.fillMaxWidth()) {
+                Stat("Tasse stimate", eur(p.taxDue), Modifier.weight(1f), Pal.Amber)
+                Stat("Valore netto", eur(p.netValue), Modifier.weight(1f))
+            }
+        }
+
+        GlassCard {
+            Label("Proiezione a fine anno · ${dayMonth(p.projDate)}")
+            Spacer(Modifier.height(6.dp))
+            Text(eur(p.projNetValue), style = BigNumber, maxLines = 1)
+            Text("valore netto previsto (lordo " + eur(p.projValue) + ")", color = Pal.Muted, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            DeltaChip("Guadagno previsto " + signed(p.projNetGain) + " netto · " + signed(p.projGain) + " lordo", p.projNetGain >= 0)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Stima al rendimento storico di ogni acquisto (prudente per quelli recenti), con le tasse sulle plusvalenze.",
+                color = Pal.Muted, fontSize = 12.sp,
+            )
         }
 
         Label("Prezzi attuali", Modifier.padding(start = 4.dp))
@@ -238,9 +317,14 @@ fun PortfolioScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(i.name, fontWeight = FontWeight.Bold)
-                        Text(num(i.qty, 2) + " quote" + if (!i.priceSet) " · prezzo = ultimo acquisto" else "", color = Pal.Muted, fontSize = 12.sp)
+                        Text(num(i.qty, 2) + " quote" + (if (!i.priceSet) " · prezzo = ultimo acquisto" else "") + (i.symbol?.let { " · $it" } ?: "") + " · tasse " + pct(i.taxRate, 1), color = Pal.Muted, fontSize = 12.sp)
                     }
-                    Text(eur(i.price, 2), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = accent)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(eur(i.price, 2), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = accent)
+                        quotes.entries.firstOrNull { it.key.endsWith("|" + i.name) }?.value?.changePct?.let {
+                            Text((if (it >= 0) "▲ " else "▼ ") + pct(kotlin.math.abs(it), 2) + " oggi", color = if (it >= 0) Pal.Emerald else Pal.Rose, fontSize = 12.sp)
+                        }
+                    }
                     Text("  ✎", color = Pal.Muted)
                 }
             }

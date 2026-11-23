@@ -97,11 +97,25 @@ data class Lot(
     val gainPct: Double?, val days: Int?, val id: Long = 0,
 )
 
-data class Instrument(val name: String, val price: Double, val priceSet: Boolean, val qty: Double)
+data class Instrument(
+    val name: String, val price: Double, val priceSet: Boolean, val qty: Double,
+    val symbol: String? = null, val quoteAt: Long? = null,
+    val taxRate: Double = 0.26,
+)
 
 data class Portfolio(
     val lots: List<Lot>,
     val invested: Double, val value: Double, val gain: Double, val gainPct: Double?,
     val series: List<Pair<LocalDate, Double>>,   // capitale versato nel tempo
     val instruments: List<Instrument>,
+    val projValue: Double = 0.0,     // valore stimato a fine anno
+    val projGain: Double = 0.0,      // plusvalenza stimata a fine anno
+    val projDate: LocalDate = LocalDate.now(),
+    // al netto delle tasse sulle plusvalenze (aliquota per strumento; le perdite non generano imposta)
+    val taxDue: Double = 0.0,
+    val netGain: Double = 0.0,
+    val netValue: Double = 0.0,
+    val projTax: Double = 0.0,
+    val projNetGain: Double = 0.0,
+    val projNetValue: Double = 0.0,
 )

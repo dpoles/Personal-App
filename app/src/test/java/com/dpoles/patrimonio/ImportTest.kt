@@ -94,3 +94,29 @@ class ImportTest {
         assertEquals(r.db.vehicles.size, again.vehicles.size)
     }
 }
+
+class TaxTest {
+    @Test
+    fun nettoDelleTasse() {
+        val d = java.time.LocalDate.now()
+        val db = Db(
+            lots = listOf(
+                LotE(1, AZIONI, "ETF", d.minusDays(200), 10.0, 100.0, 0.0),   // costo 1000
+                LotE(2, AZIONI, "ETF", d.minusDays(100), 10.0, 100.0, 0.0),   // costo 1000
+            ),
+            prices = mapOf("azioni|ETF" to 120.0),                            // valore 2400, plusvalenza lorda 400
+            taxRates = mapOf("azioni|ETF" to 0.26),
+        )
+        val p = db.portfolio(AZIONI)
+        assertEquals(400.0, p.gain, 0.001)
+        assertEquals(104.0, p.taxDue, 0.001)          // 26% di 400
+        assertEquals(296.0, p.netGain, 0.001)
+        assertEquals(2296.0, p.netValue, 0.001)
+        assertTrue("la proiezione cresce", p.projValue > p.value)
+        assertTrue("netto proiettato < lordo", p.projNetGain < p.projGain)
+        // perdita: nessuna imposta
+        val loss = db.copy(prices = mapOf("azioni|ETF" to 90.0)).portfolio(AZIONI)
+        assertEquals(0.0, loss.taxDue, 0.001)
+        assertEquals(loss.gain, loss.netGain, 0.001)
+    }
+}

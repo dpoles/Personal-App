@@ -8,6 +8,13 @@ rifornimenti di carburante. Parte vuota: i dati si inseriscono con dei moduli e 
   composizione e risparmio.
 - **Azioni** e **Monetari**: acquisti, prezzo attuale per strumento, valore e plusvalenza.
 - **Auto**: rifornimenti per veicolo, con spesa, prezzo medio, consumo e costo al km.
+- **Quotazioni in tempo reale**: per ogni strumento puoi indicare un simbolo (es. `VWCE.DE`, `XEON.DE`, Xetra in euro);
+  l'app aggiorna il prezzo ogni minuto (Yahoo Finance, nessuna chiave) e ricalcola valore, plusvalenza e patrimonio.
+  L'import dal foglio ricava il simbolo dai link Teleborsa.
+- **Al netto delle tasse**: aliquota per strumento (importata dal foglio o impostata a mano, default 26%) sulla
+  plusvalenza complessiva; le perdite non generano imposta. Mostrati lordo e netto, anche per la proiezione.
+- **Proiezione a fine anno**: ogni acquisto prosegue al suo rendimento storico (solo se detenuto da 30+ giorni),
+  più il risparmio medio degli ultimi mesi. È una stima, non una previsione di mercato. Non include il bollo.
 - **Previsione km a chiusura periodo**: per ogni veicolo imposti periodo, km iniziali e un limite facoltativo;
   l'app stima il contachilometri a fine periodo dal ritmo attuale e lo confronta con il limite.
 - **Importazione da Google Sheets**: tocca 📥 → "Da Google Sheets". L'app legge in sola lettura i fogli Bal, Rif,

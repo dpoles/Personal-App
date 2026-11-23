@@ -201,12 +201,18 @@ fun LotForm(db: Db, kind: String, existing: LotE?, onSave: (LotE) -> Unit, onDel
 }
 
 @Composable
-fun PriceForm(current: Double, name: String, onSave: (Double) -> Unit, onDismiss: () -> Unit) {
+fun PriceForm(current: Double, name: String, symbol: String?, taxRate: Double, onSave: (Double, String, Double) -> Unit, onDismiss: () -> Unit) {
     var price by remember { mutableStateOf(fmtIn(current)) }
-    val p = price.d()
-    FormSheet("Prezzo attuale · $name", onDismiss, onSave = if (p == null || p <= 0) null else ({ onSave(p) })) {
+    var sym by remember { mutableStateOf(symbol.orEmpty()) }
+    var tax by remember { mutableStateOf(fmtIn(taxRate * 100)) }
+    val p = price.d(); val t = tax.d()
+    FormSheet("Prezzo attuale · $name", onDismiss, onSave = if (p == null || p <= 0 || t == null || t < 0 || t > 60) null else ({ onSave(p, sym, t / 100) })) {
+        Field("Simbolo per la quotazione in tempo reale", sym, { sym = it }, decimal = false)
+        Hint("Es. VWCE.DE o XEON.DE (Xetra, in euro). Con il simbolo il prezzo si aggiorna da solo ogni minuto; lascialo vuoto per usare solo il prezzo manuale.")
         Field("Prezzo per quota", price, { price = it }, suffix = "€")
-        Hint("Serve a calcolare valore e plusvalenza degli acquisti.")
+        Hint("Con il simbolo impostato questo valore viene sostituito alla prossima quotazione.")
+        Field("Aliquota sulle plusvalenze", tax, { tax = it }, suffix = "%")
+        Hint("Serve a mostrare guadagno e valore al netto delle tasse (es. 26% azioni ed ETF azionari, 12,5% titoli di Stato). Le perdite non generano imposta.")
     }
 }
 

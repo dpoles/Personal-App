@@ -7,6 +7,7 @@ import java.time.temporal.ChronoUnit
 
 const val AZIONI = "azioni"
 const val MONETARI = "monetari"
+const val DEFAULT_TAX = 0.26
 
 data class MonthE(
     val id: Long, val year: Int, val month: Int,
@@ -37,6 +38,9 @@ data class Db(
     val fills: List<FillE> = emptyList(),
     val lots: List<LotE> = emptyList(),
     val prices: Map<String, Double> = emptyMap(),   // "kind|nome" -> prezzo attuale
+    val symbols: Map<String, String> = emptyMap(),  // "kind|nome" -> simbolo per la quotazione live
+    val quoteAt: Map<String, Long> = emptyMap(),    // "kind|nome" -> ora dell'ultima quotazione (ms)
+    val taxRates: Map<String, Double> = emptyMap(), // "kind|nome" -> aliquota sulle plusvalenze (es. 0.26)
 ) {
     fun priceKey(kind: String, name: String) = "$kind|$name"
 
@@ -66,10 +70,27 @@ data class Db(
         val series = out.map { run += it.cost; it.date!! to run }
         val inst = ls.groupBy { it.name }.map { (n, g) ->
             val k = priceKey(kind, n)
-            Instrument(n, prices[k] ?: g.last().price, prices.containsKey(k), g.sumOf { it.qty })
+            Instrument(n, prices[k] ?: g.last().price, prices.containsKey(k), g.sumOf { it.qty }, symbols[k], quoteAt[k], taxRates[k] ?: DEFAULT_TAX)
         }
         val inv = out.sumOf { it.cost }; val v = out.sumOf { it.value }
-        return Portfolio(out, inv, v, v - inv, if (inv > 0) (v - inv) / inv else null, series, inst)
+        // Proiezione a fine anno: ogni acquisto prosegue al suo rendimento giornaliero storico
+        // (solo se detenuto da almeno 30 giorni; gli acquisti più recenti restano fermi, in modo prudente).
+        val end = LocalDate.of(today.year, 12, 31)
+        val left = ChronoUnit.DAYS.between(today, end).coerceAtLeast(0)
+        val extra = out.sumOf { l -> val d = l.days ?: 0; if (d >= 30) l.gain / d * left else 0.0 }
+        // tasse: aliquota di ogni strumento sulla sua plusvalenza complessiva (se positiva)
+        var tax = 0.0; var projTax = 0.0
+        for ((n, g) in out.groupBy { it.name }) {
+            val rate = taxRates[priceKey(kind, n)] ?: DEFAULT_TAX
+            val gain = g.sumOf { it.gain }
+            val projGain = gain + g.sumOf { l -> val d = l.days ?: 0; if (d >= 30) l.gain / d * left else 0.0 }
+            tax += rate * maxOf(0.0, gain); projTax += rate * maxOf(0.0, projGain)
+        }
+        val pv = v + extra; val pg = v - inv + extra
+        return Portfolio(
+            out, inv, v, v - inv, if (inv > 0) (v - inv) / inv else null, series, inst, pv, pg, end,
+            tax, v - inv - tax, v - tax, projTax, pg - projTax, pv - projTax,
+        )
     }
 
     fun vehicleList(): List<Vehicle> = vehicles.map { v ->
@@ -122,6 +143,9 @@ data class Db(
                 .put("q", it.qty).put("p", it.price).put("fee", it.fee)
         }))
         .put("prices", JSONObject(prices))
+        .put("sym", JSONObject(symbols))
+        .put("qat", JSONObject(quoteAt))
+        .put("tax", JSONObject(taxRates))
         .toString()
 
     companion object {
@@ -153,6 +177,9 @@ data class Db(
                         it.getDouble("q"), it.getDouble("p"), it.getDouble("fee"))
                 },
                 prices = pr?.keys()?.asSequence()?.associateWith { pr.getDouble(it) } ?: emptyMap(),
+                symbols = o.optJSONObject("sym")?.let { j -> j.keys().asSequence().associateWith { j.getString(it) } } ?: emptyMap(),
+                taxRates = o.optJSONObject("tax")?.let { j -> j.keys().asSequence().associateWith { j.getDouble(it) } } ?: emptyMap(),
+                quoteAt = o.optJSONObject("qat")?.let { j -> j.keys().asSequence().associateWith { j.getLong(it) } } ?: emptyMap(),
             )
         }
     }

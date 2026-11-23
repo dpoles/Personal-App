@@ -13,6 +13,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
@@ -35,6 +38,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     val importing = MutableStateFlow(false)
     val googlePending = MutableStateFlow<PendingIntent?>(null)
+    val quotes = MutableStateFlow<Map<String, Quote>>(emptyMap())   // "kind|nome" -> quotazione live
+    val quoteError = MutableStateFlow<String?>(null)
+    private var quoting = false
+
+    /** Aggiorna le quotazioni in tempo reale degli strumenti che hanno un simbolo; il prezzo attuale viene salvato. */
+    fun refreshQuotes() {
+        if (quoting) return
+        val d = _db.value
+        val targets = listOf(AZIONI, MONETARI).flatMap { k ->
+            d.portfolio(k).instruments.mapNotNull { i -> i.symbol?.let { Triple(d.priceKey(k, i.name), i.name, it) } }
+        }
+        if (targets.isEmpty()) return
+        quoting = true
+        viewModelScope.launch {
+            try {
+                val res = withContext(Dispatchers.IO) {
+                    coroutineScope { targets.map { t -> async { t to runCatching { QuoteApi.fetch(t.third) } } }.awaitAll() }
+                }
+                val ok = HashMap<String, Quote>(); val errors = mutableListOf<String>()
+                for ((t, r) in res) {
+                    val q = r.getOrNull()
+                    when {
+                        q == null -> errors += r.exceptionOrNull()?.message ?: "${t.third}: non disponibile"
+                        q.currency != "EUR" -> errors += "${t.third} è quotato in ${q.currency}: non convertito"
+                        else -> ok[t.first] = q
+                    }
+                }
+                if (ok.isNotEmpty()) {
+                    quotes.update { it + ok }
+                    mutate { db -> db.copy(prices = db.prices + ok.mapValues { it.value.price }, quoteAt = db.quoteAt + ok.mapValues { it.value.timeMs }) }
+                }
+                quoteError.value = errors.firstOrNull()
+            } finally {
+                quoting = false
+            }
+        }
+    }
 
     private val client by lazy { Identity.getAuthorizationClient(getApplication<Application>()) }
     private val request by lazy {
@@ -154,8 +194,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         d.copy(lots = d.lots.upsert(e) { it.id })
     }
     fun deleteLot(id: Long) = mutate { d -> d.copy(lots = d.lots.filter { it.id != id }) }
-    fun setPrice(kind: String, name: String, price: Double) = mutate { d ->
-        d.copy(prices = d.prices + (d.priceKey(kind, name) to price))
+    fun setPrice(kind: String, name: String, price: Double, symbol: String, taxRate: Double) = mutate { d ->
+        val k = d.priceKey(kind, name)
+        val sym = symbol.trim().uppercase()
+        d.copy(
+            prices = d.prices + (k to price), taxRates = d.taxRates + (k to taxRate),
+            symbols = if (sym.isEmpty()) d.symbols - k else d.symbols + (k to sym),
+        )
     }
 
     /** Se [newVehicle] non è nullo viene creato un veicolo nuovo e il rifornimento gli viene assegnato. */
