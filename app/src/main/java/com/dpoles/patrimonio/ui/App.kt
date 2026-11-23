@@ -95,8 +95,8 @@ fun PatrimonioApp(db: Db, vm: MainViewModel, onImport: () -> Unit) {
                 Box(Modifier.padding(pad)) {
                     when (tab) {
                         0 -> HomeScreen(bal, onAdd = ::add, onEdit = { sheet = Sheet.EditMonth(it) }, onImport = { importMenu = true }, liveDelta = liveDelta, invGrowth = invGrowth, taxNow = taxNow, taxProj = taxProj)
-                        1 -> PortfolioScreen(azioni, Pal.Violet, "azioni", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(AZIONI, it) }, quotes.filterKeys { it.startsWith("$AZIONI|") }, quoteError)
-                        2 -> PortfolioScreen(monetari, Pal.Cyan, "monetari", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(MONETARI, it) }, quotes.filterKeys { it.startsWith("$MONETARI|") }, quoteError)
+                        1 -> PortfolioScreen(azioni, Pal.Violet, "azioni", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(AZIONI, it) }, quotes.filterKeys { it.startsWith("$AZIONI|") }, quoteError, vm::refreshQuotes)
+                        2 -> PortfolioScreen(monetari, Pal.Cyan, "monetari", ::add, { sheet = Sheet.EditLot(it) }, { sheet = Sheet.EditPrice(MONETARI, it) }, quotes.filterKeys { it.startsWith("$MONETARI|") }, quoteError, vm::refreshQuotes)
                         else -> FuelScreen(vehicles, vehIdx, { vehIdx = it }, { sheet = Sheet.NewFill(it ?: currentVehicle).takeIf { _ -> it != null } ?: Sheet.NewFill(null) }, { sheet = Sheet.EditFill(it) }, { sheet = Sheet.EditVehicle(it) })
                     }
                 }

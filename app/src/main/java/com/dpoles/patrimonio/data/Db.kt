@@ -9,6 +9,10 @@ const val AZIONI = "azioni"
 const val MONETARI = "monetari"
 const val DEFAULT_TAX = 0.26
 
+/** Un nome breve che sembra un ticker (es. VWCE, XEON) viene quotato su Xetra in euro. */
+fun guessSymbol(name: String): String? =
+    name.trim().takeIf { Regex("[A-Za-z0-9]{3,6}").matches(it) }?.uppercase()?.plus(".DE")
+
 data class MonthE(
     val id: Long, val year: Int, val month: Int,
     val income: Double, val expense: Double,
@@ -70,7 +74,7 @@ data class Db(
         val series = out.map { run += it.cost; it.date!! to run }
         val inst = ls.groupBy { it.name }.map { (n, g) ->
             val k = priceKey(kind, n)
-            Instrument(n, prices[k] ?: g.last().price, prices.containsKey(k), g.sumOf { it.qty }, symbols[k], quoteAt[k], taxRates[k] ?: DEFAULT_TAX)
+            Instrument(n, prices[k] ?: g.last().price, prices.containsKey(k), g.sumOf { it.qty }, symbols[k] ?: guessSymbol(n), quoteAt[k], taxRates[k] ?: DEFAULT_TAX)
         }
         val inv = out.sumOf { it.cost }; val v = out.sumOf { it.value }
         // Proiezione a fine anno: ogni acquisto prosegue al suo rendimento giornaliero storico

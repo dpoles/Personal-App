@@ -238,7 +238,7 @@ private fun MonthList(bal: List<BalRow>, onEdit: (Long) -> Unit) {
 fun PortfolioScreen(
     p: Portfolio, accent: Color, unit: String,
     onAdd: () -> Unit, onEditLot: (Long) -> Unit, onEditPrice: (String) -> Unit,
-    quotes: Map<String, Quote> = emptyMap(), quoteError: String? = null,
+    quotes: Map<String, Quote> = emptyMap(), quoteError: String? = null, onRefreshQuotes: () -> Unit = {},
 ) {
     if (p.lots.isEmpty()) {
         EmptyState(
@@ -262,15 +262,24 @@ fun PortfolioScreen(
                 DeltaChip(signed(p.gain) + (p.gainPct?.let { " · " + pct(it) } ?: "") + " lordo", p.gain >= 0)
                 DeltaChip(signed(p.netGain) + " netto", p.netGain >= 0)
             }
+            val hasSymbol = p.instruments.any { it.symbol != null }
             val liveAt = p.instruments.mapNotNull { it.quoteAt }.maxOrNull()
-            if (liveAt != null && liveAt > 0) {
-                Spacer(Modifier.height(8.dp))
-                val live = quotes.isNotEmpty()
-                Text(
-                    (if (live) "● Live · " else "○ Ultima quotazione · ") + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(liveAt)),
-                    color = if (live) Pal.Emerald else Pal.Muted, fontSize = 12.sp,
-                )
+            val live = quotes.isNotEmpty()
+            val lastLive = quotes.values.maxOfOrNull { it.timeMs } ?: liveAt ?: 0L
+            val timeFmt = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+            val dateFmt = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+            val status = when {
+                !hasSymbol -> "○ Quotazione live non attiva: tocca un prezzo qui sotto e imposta il simbolo (es. VWCE.DE)"
+                live && marketOpen() -> "● Live · ultimo prezzo " + timeFmt.format(java.util.Date(lastLive)) + " · aggiornamento ogni minuto"
+                live -> "○ Mercato chiuso (Xetra 9:00–17:30, lun–ven): ultimo prezzo " + dateFmt.format(java.util.Date(lastLive))
+                liveAt != null && liveAt > 0 -> "○ Ultima quotazione " + dateFmt.format(java.util.Date(liveAt)) + " · tocca per aggiornare"
+                else -> "○ In attesa della prima quotazione… tocca per aggiornare"
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                status, color = if (live && marketOpen()) Pal.Emerald else Pal.Muted, fontSize = 12.sp,
+                modifier = Modifier.clickableNoRipple(onRefreshQuotes),
+            )
             quoteError?.let { Spacer(Modifier.height(6.dp)); Text("⚠ $it", color = Pal.Rose, fontSize = 12.sp) }
             if (series.size >= 2) {
                 Spacer(Modifier.height(14.dp))
@@ -317,7 +326,7 @@ fun PortfolioScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(i.name, fontWeight = FontWeight.Bold)
-                        Text(num(i.qty, 2) + " quote" + (if (!i.priceSet) " · prezzo = ultimo acquisto" else "") + (i.symbol?.let { " · $it" } ?: "") + " · tasse " + pct(i.taxRate, 1), color = Pal.Muted, fontSize = 12.sp)
+                        Text(num(i.qty, 2) + " quote" + (if (!i.priceSet) " · prezzo = ultimo acquisto" else "") + (i.symbol?.let { " · $it" } ?: " · senza simbolo: tocca per attivare il live") + " · tasse " + pct(i.taxRate, 1), color = Pal.Muted, fontSize = 12.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(eur(i.price, 2), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = accent)
@@ -507,4 +516,12 @@ private fun ForecastCard(v: Vehicle, onSettings: () -> Unit) {
 @Composable
 fun Empty(text: String) = Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
     Text(text, color = Pal.Muted)
+}
+
+/** Xetra: lun–ven 9:00–17:30 (ora di Berlino). */
+private fun marketOpen(): Boolean {
+    val t = java.time.ZonedDateTime.now(java.time.ZoneId.of("Europe/Berlin"))
+    if (t.dayOfWeek.value > 5) return false
+    val m = t.hour * 60 + t.minute
+    return m in (9 * 60)..(17 * 60 + 30)
 }
